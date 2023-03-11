@@ -228,7 +228,7 @@ int main(int argc, char** argv) {
 			// check if the socket has our message https://stackoverflow.com/questions/5168372/how-to-interrupt-a-thread-which-is-waiting-on-recv-function
 			// note: the ioctlsocket might be Windows dependent. If it is, we can find a replacement, but this is the general idea. A return value of 0 means success.
 			long unsigned int bytesToRead = packetSize;
-			if (!ioctlsocket(sockfd, FIONREAD, &bytesToRead) && bytesToRead == (long unsigned int) packetSize) {
+			if (!ioctlsocket(sockfd, FIONREAD, &bytesToRead) && bytesToRead == (long unsigned int) packetSize && responsePos < 8) {
 				responses[responsePos] = recvMsg();
 				globalStratum = responses[responsePos].stratum;
 				// TODO: If we do not set recvTime inside of recvMsg(), then do it here. We should do it inside recvMsg for more accurate time.
