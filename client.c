@@ -231,7 +231,6 @@ int main(int argc, char** argv) {
 			if (!ioctlsocket(sockfd, FIONREAD, &bytesToRead) && bytesToRead == (long unsigned int) packetSize && responsePos < 8) {
 				responses[responsePos] = recvMsg();
 				globalStratum = responses[responsePos].stratum;
-				// TODO: If we do not set recvTime inside of recvMsg(), then do it here. We should do it inside recvMsg for more accurate time.
 				++responsePos;
 			}
 			curTime = clock() - startTime;
