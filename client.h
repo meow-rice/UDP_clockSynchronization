@@ -1,9 +1,13 @@
+#include <time.h>
+
 // maximum number of delays or offsets to calculate
 #define MAX_NUM_MEASUREMENTS 100
+// from NTP client example https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
+#define NTP_TIMESTAMP_DELTA 2208988800ull
 
 struct ntpTime {
-	int intPart;
-	int fractionPart;
+	unsigned int intPart;
+	unsigned int fractionPart;
 };
 
 struct ntpPacket {
@@ -25,7 +29,7 @@ struct ntpPacket {
 void error(char* msg); // print error messages
 void connectToServer(const char* hostName, short port);
 // Return the current system time as an NTP time
-struct ntpTime getCurrentTime();
+struct ntpTime getCurrentTime(time_t baselineTime, clock_t precisionUnitsSinceBaseline);
 // Calculate the difference in seconds between two NTP times.
 double timeDifference(struct ntpTime fisrtTime, struct ntpTime secondTime);
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);

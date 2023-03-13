@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 #ifdef __unix__
 	#include <arpa/inet.h>
 	#include <sys/socket.h>
@@ -36,6 +37,8 @@ struct ntpTime recvTimes[8]; // local time each response was received
 struct ntpPacket responses[8];
 int responsePos = 0; // index in responses we will read to
 clock_t pollingInterval = 4 * 60 * CLOCKS_PER_SEC; // 4 minutes between bursts
+clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
+time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 const int packetSize = sizeof(struct ntpPacket);
 
 void error(char* msg) {
@@ -96,18 +99,29 @@ void connectToServer(const char* hostName, short port) {
 #endif
 }
 
-// Return the current system time as an NTP time
-struct ntpTime getCurrentTime() {
-	// TODO: Implement this function
+// Return the current system time as an NTP time. I'm not sure how precise this method is.
+// Constraint: Algorithm only works on a Little Endian system.
+// Precondition: baselineTime and baselineInApplicationClock are measured at the same time prior to calling this function.
+struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplicationClock) {
+	// TODO: Figure out if this is precise enough / the correct way to get precision past seconds
+	clock_t currentTime = clock();
+	clock_t diffInTimeUnits = currentTime - baselineInApplicationClock;
+	double diffInSeconds = diffInTimeUnits / CLOCKS_PER_SEC;
+	// attempting to extract fraction part and int part without losing precision https://stackoverflow.com/questions/5589383/extract-fractional-part-of-double-efficiently-in-c
+	double diffInFractionalSeconds = diffInSeconds - floor(diffInSeconds);
+	int integerSecondsSinceBaseline = (int) floor(diffInSeconds);
+	time_t currentTimeSince1900 = baselineTime + integerSecondsSinceBaseline - NTP_TIMESTAMP_DELTA;
+
 	struct ntpTime ret;
-	ret.intPart = 0;
-	ret.fractionPart = 0;
+	ret.intPart = (unsigned int) currentTimeSince1900; // must fit in 32 bits
+	ret.fractionPart = (unsigned int) (diffInFractionalSeconds * pow(2,32)); // fractional part represented as a sequence of 32 bits, assuming little endian
 	return ret;
 }
 // Calculate the difference in seconds between two NTP times.
-double timeDifference(struct ntpTime fisrtTime, struct ntpTime secondTime) {
-	// TODO: Implement this function
-	return 0.0;
+double timeDifference(struct ntpTime firstTime, struct ntpTime secondTime) {
+	unsigned int secondsDifference = secondTime.intPart - firstTime.intPart;
+	double fractionalDifference = pow(2,-32) * (secondTime.fractionPart - firstTime.fractionPart);
+	return secondsDifference + fractionalDifference;
 }
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4) {
 	// TODO: Implement this function
@@ -146,7 +160,7 @@ void sendMsg() {
 	char mode = 3; // client
 	char stratum = globalStratum;
 	if (org.intPart != 0) {
-		org = getCurrentTime();
+		org = getCurrentTime(startTimeInSeconds, startTime);
 	}
 	// TODO: Fill out other values
 	//    Figure out if polling interval in the packet is 4 minutes or something else. If it is 4 minutes, use value from pollingInterval global variable.
@@ -162,7 +176,7 @@ struct ntpPacket recvMsg() {
 	memset(buf, 0, packetSize);
 	memset((void*)&ret, 0, packetSize); // zero out the values in the packet object
 	// TODO: Read the socket into a byte buffer.
-	recvTimes[responsePos] = getCurrentTime();
+	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
 	// TODO: parse byte buffer into an ntpPacket object (ret).
 	return ret;
 }
@@ -177,7 +191,6 @@ int main(int argc, char** argv) {
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
 	clock_t programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
 	clock_t timeBetweenBursts = pollingInterval;
-	clock_t startTime; // time on the clock when you started the program (we initialize this after the socket connects)
 	clock_t startOfBurst;
 	clock_t curTime; // time passed since the start time
 
@@ -207,7 +220,8 @@ int main(int argc, char** argv) {
 	connectToServer(serverName, serverPort);
 
 	// start the clock
-	startTime = clock();
+	startTimeInSeconds = time(NULL); // system time, epoch 1970
+	startTime = clock(); // processor time measured in CLOCKS_PER_SEC
 
 	// loop until program should end
 	while (curTime < programLength) {
