@@ -34,14 +34,6 @@ public:
 
 };
 
-struct header {
-    uint16_t f1;
-    uint16_t f2;
-    uint32_t f3;
-};
-struct data {
-    uint16_t pf1;
-    uint64_t pf2;
-};
+
 
 #endif
