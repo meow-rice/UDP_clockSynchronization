@@ -1,5 +1,7 @@
-client:
-	gcc client.c -o client
+client: client.c
+	gcc client.c -lm -o client
 
 clean:
-	rm *.out *.exe
+	rm *.out *.exe || echo "delete executables"
+	rm ./client || echo "delete client"
+	rm ./server || echo "delete server"

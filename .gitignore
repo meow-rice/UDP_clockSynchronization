@@ -1,3 +1,8 @@
 .vs/
+# vim
+*.swp
+# executables
 *.exe
+client
+server
 

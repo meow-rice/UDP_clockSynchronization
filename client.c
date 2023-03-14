@@ -9,18 +9,25 @@
 #include "client.h"
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <math.h>
-#ifdef __unix__
-	#include <arpa/inet.h>
-	#include <sys/socket.h>
-#elif defined(_WIN32) || defined(WIN32)
+
+// Windows includes
+#if defined(_WIN32) || defined(WIN32)
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
 	// Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
 	#pragma comment (lib, "Ws2_32.lib")
 	#pragma comment (lib, "Mswsock.lib")
 	#pragma comment (lib, "AdvApi32.lib")
+// Unix includes
+#else
+	#include <arpa/inet.h>
+	#include <netdb.h>
+	#include <sys/socket.h>
+	#include <sys/ioctl.h>
 #endif
 
 // globals
@@ -106,7 +113,7 @@ struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplication
 	// TODO: Figure out if this is precise enough / the correct way to get precision past seconds
 	clock_t currentTime = clock();
 	clock_t diffInTimeUnits = currentTime - baselineInApplicationClock;
-	double diffInSeconds = diffInTimeUnits / CLOCKS_PER_SEC;
+	double diffInSeconds = (double) diffInTimeUnits / CLOCKS_PER_SEC;
 	// attempting to extract fraction part and int part without losing precision https://stackoverflow.com/questions/5589383/extract-fractional-part-of-double-efficiently-in-c
 	double diffInFractionalSeconds = diffInSeconds - floor(diffInSeconds);
 	int integerSecondsSinceBaseline = (int) floor(diffInSeconds);
@@ -189,7 +196,7 @@ void sortResponses(struct ntpPacket responses[8]) {
 
 int main(int argc, char** argv) {
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
-	clock_t programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
+	clock_t programLength = 3600 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
 	clock_t timeBetweenBursts = pollingInterval;
 	clock_t startOfBurst;
 	clock_t curTime; // time passed since the start time
@@ -222,6 +229,12 @@ int main(int argc, char** argv) {
 	// start the clock
 	startTimeInSeconds = time(NULL); // system time, epoch 1970
 	startTime = clock(); // processor time measured in CLOCKS_PER_SEC
+	
+	// USE SMALL VALUES OF TIME FOR TESTING!
+	programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
+	timeBetweenBursts = 5 * CLOCKS_PER_SEC; // show the timer every 5 seconds
+	time_t timerAccuracyChecker;
+	struct ntpTime startTimeAsNtp = getCurrentTime(startTimeInSeconds, startTime);
 
 	// loop until program should end
 	while (curTime < programLength) {
@@ -229,6 +242,14 @@ int main(int argc, char** argv) {
 		int prevResponsePos = -1;
 		curTime = clock() - startTime; // time since the start of the program
 		startOfBurst = curTime;
+		
+		// Right now, just test timing accuracy after each "burst"
+		timerAccuracyChecker = time(NULL) - startTimeInSeconds; // how much time has passed in seconds; ground truth
+		printf("Expected time difference: %ld seconds\n", timerAccuracyChecker);
+		struct ntpTime currentTimeAsNtp = getCurrentTime(startTimeInSeconds, startTime);
+		double timeDiffTest = timeDifference(startTimeAsNtp, currentTimeAsNtp);
+		printf("Actual time difference: %f seconds\n\n", timeDiffTest);
+
 		// Do a burst
 		while (curTime - startOfBurst < timeBetweenBursts && responsePos < 8) {
 			// For now, send the messages in the burst one-at-a-time
@@ -241,8 +262,14 @@ int main(int argc, char** argv) {
 
 			// check if the socket has our message https://stackoverflow.com/questions/5168372/how-to-interrupt-a-thread-which-is-waiting-on-recv-function
 			// note: the ioctlsocket might be Windows dependent. If it is, we can find a replacement, but this is the general idea. A return value of 0 means success.
+#if defined(_WIN32) || defined(WIN32)
 			long unsigned int bytesToRead = packetSize;
 			if (!ioctlsocket(sockfd, FIONREAD, &bytesToRead) && bytesToRead == (long unsigned int) packetSize && responsePos < 8) {
+#else
+			// Unix implementation
+			int bytesToRead = packetSize;
+			if (!ioctl(sockfd, FIONREAD, &bytesToRead) && bytesToRead == packetSize && responsePos < 8) {
+#endif
 				responses[responsePos] = recvMsg();
 				globalStratum = responses[responsePos].stratum;
 				++responsePos;
