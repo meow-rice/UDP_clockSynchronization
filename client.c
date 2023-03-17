@@ -40,6 +40,7 @@ char globalStratum = 0; // unspecified
 double delays[8];
 double offsets[8];
 struct ntpTime org; // originate timestamp the client will send
+struct ntpTime xmtTimes[8]; // local time we sent each request
 struct ntpTime recvTimes[8]; // local time each response was received
 struct ntpPacket responses[8];
 int responsePos = 0; // index in responses we will read to
@@ -172,6 +173,8 @@ void sendMsg() {
 	// TODO: Fill out other values
 	//    Figure out if polling interval in the packet is 4 minutes or something else. If it is 4 minutes, use value from pollingInterval global variable.
 	//    Figure out how to calculate precision (probably uses CLOCKS_PER_SECOND from time.h)
+	struct ntpTime xmtTime = getCurrentTime(startTimeInSeconds, startTime);
+	xmtTimes[responsePos] = xmtTime;
 	// TODO: Move packet into byte buffer
 	// TODO: Send the byte buffer over the socket.
 }
@@ -250,16 +253,13 @@ int main(int argc, char** argv) {
 		double timeDiffTest = timeDifference(startTimeAsNtp, currentTimeAsNtp);
 		printf("Actual time difference: %f seconds\n\n", timeDiffTest);
 
-		// Do a burst
+		// Do a burst (send all msgs without waiting for a response)
+		for(responsePos = 0; responsePos < 8; ++responsePos) {
+			sendMsg();
+		}
+		responsePos = 0; // start reading at the start of the array again
+		// Listen for responses
 		while (curTime - startOfBurst < timeBetweenBursts && responsePos < 8) {
-			// For now, send the messages in the burst one-at-a-time
-			if (responsePos != prevResponsePos) {
-				sendMsg();
-				prevResponsePos = responsePos; // catch up so we never call sendMsg() until after we successfully receive a message
-			}
-
-			// TODO: Figure out if we need the burst packets to occur at two-second intervals as stated on page 3
-
 			// check if the socket has our message https://stackoverflow.com/questions/5168372/how-to-interrupt-a-thread-which-is-waiting-on-recv-function
 			// note: the ioctlsocket might be Windows dependent. If it is, we can find a replacement, but this is the general idea. A return value of 0 means success.
 #if defined(_WIN32) || defined(WIN32)
