@@ -23,7 +23,7 @@ struct ntpPacket {
 	struct ntpTime referenceTimestamp;
 	struct ntpTime originTimestamp;
 	struct ntpTime receiveTimestamp;
-	struct ntpTime transitTimestamp;
+	struct ntpTime transmitTimestamp;
 };
 
 void error(char* msg); // print error messages
