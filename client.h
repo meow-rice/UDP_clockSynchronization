@@ -31,6 +31,7 @@ void connectToServer(const char* hostName, short port);
 // Return the current system time as an NTP time
 struct ntpTime getCurrentTime(time_t baselineTime, clock_t precisionUnitsSinceBaseline);
 // Calculate the difference in seconds between two NTP times.
+int ntpTimeEquals(struct ntpTime t1, struct ntpTime t2); // return true if the times are equivalent
 double timeDifference(struct ntpTime fisrtTime, struct ntpTime secondTime);
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);
 double minOffset(double offsets[8]);

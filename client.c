@@ -13,22 +13,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-
-// Windows includes
-#if defined(_WIN32) || defined(WIN32)
-	#include <winsock2.h>
-	#include <ws2tcpip.h>
-	// Need to link with Ws2_32.lib, Mswsock.lib, and Advapi32.lib
-	#pragma comment (lib, "Ws2_32.lib")
-	#pragma comment (lib, "Mswsock.lib")
-	#pragma comment (lib, "AdvApi32.lib")
-// Unix includes
-#else
-	#include <arpa/inet.h>
-	#include <netdb.h>
-	#include <sys/socket.h>
-	#include <sys/ioctl.h>
-#endif
+// Network stuff
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
 
 // globals
 char* serverName = NULL;
@@ -54,7 +43,6 @@ void error(char* msg) {
 	exit(0);
 }
 
-#ifdef __unix__
 void connectToServerUnix(const char* hostName, short port) {
 	// socket code copied from https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); // Create a UDP socket.
@@ -76,42 +64,15 @@ void connectToServerUnix(const char* hostName, short port) {
 	if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
 		error("ERROR connecting");
 }
-#endif
-
-#if defined(_WIN32) || defined(WIN32)
-void connectToServerWindows(const char* hostName, short port) {
-	// Tutorial: https://learn.microsoft.com/en-us/windows/win32/winsock/complete-client-code?source=recommendations
-	WSADATA wsaData;
-	SOCKET ConnectSocket = INVALID_SOCKET;
-	struct addrinfo* result = NULL,
-		* ptr = NULL,
-		hints;
-	int iResult = 0;
-	// Initialize Winsock
-	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (iResult != 0) {
-		printf("WSAStartup failed with error: %d\n", iResult);
-	}
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-}
-#endif
 
 void connectToServer(const char* hostName, short port) {
-#ifdef __unix__
 	connectToServerUnix(hostName, port);
-#elif defined(_WIN32) || defined(WIN32)
-	connectToServerWindows(hostName, port);
-#endif
 }
 
 // Return the current system time as an NTP time. I'm not sure how precise this method is.
 // Constraint: Algorithm only works on a Little Endian system.
 // Precondition: baselineTime and baselineInApplicationClock are measured at the same time prior to calling this function.
 struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplicationClock) {
-	// TODO: Figure out if this is precise enough / the correct way to get precision past seconds
 	clock_t currentTime = clock();
 	clock_t diffInTimeUnits = currentTime - baselineInApplicationClock;
 	double diffInSeconds = (double) diffInTimeUnits / CLOCKS_PER_SEC;
@@ -125,15 +86,19 @@ struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplication
 	ret.fractionPart = (unsigned int) (diffInFractionalSeconds * pow(2,32)); // fractional part represented as a sequence of 32 bits, assuming little endian
 	return ret;
 }
+int ntpTimeEquals(struct ntpTime t1, struct ntpTime t2) {
+	return (t1.intPart == t2.intPart && t1.fractionPart == t2.fractionPart);
+}
 // Calculate the difference in seconds between two NTP times.
+// Return secondTime - firstTime
 double timeDifference(struct ntpTime firstTime, struct ntpTime secondTime) {
 	unsigned int secondsDifference = secondTime.intPart - firstTime.intPart;
 	double fractionalDifference = pow(2,-32) * (secondTime.fractionPart - firstTime.fractionPart);
 	return secondsDifference + fractionalDifference;
 }
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4) {
-	// TODO: Implement this function
-	return 0.0;
+	// return 1/2 * [(T2-T1) + (T3 - T4)]
+	return 0.5 * (timeDifference(T1, T2) + timeDifference(T4, T3));
 }
 double minOffset(double offsets[8]) {
 	double min = offsets[0];
@@ -145,8 +110,8 @@ double minOffset(double offsets[8]) {
 	return min;
 }
 double calculateRoundtripDelay(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4) {
-	// TODO: Implement this function
-	return 0.0;
+	// return (T4 - T1) - (T3 - T2)
+	return timeDifference(T1, T4) - timeDifference(T2, T3);
 }
 double minDelay(double delays[8]) {
 	double min = delays[0];
@@ -195,6 +160,30 @@ struct ntpPacket recvMsg() {
 // I'm not sure how it would handle out-of-order receipt by the server.
 void sortResponses(struct ntpPacket responses[8]) {
 	// TODO: Implement this function
+	// Match our transmit time with the server's origin time
+	for(int i = 0; i < 8; ++i) {
+		struct ntpTime xmtTime = xmtTimes[i];
+		for(int j = i; j < 8; j++) {
+			if(ntpTimeEquals(responses[j].originTimestamp, xmtTime)) {
+				// swap locations i and j
+				struct ntpPacket tmp = responses[i];
+				responses[i] = responses[j];
+				responses[j] = tmp;
+			}
+		}
+	}
+}
+
+void testTimeEquals() {
+	struct ntpTime t1, t2, t3, t4;
+	t1.intPart = t2.intPart = t3.intPart = 200;
+	t4.intPart = 300;
+	// t1 and t2 should match. t1 and t3 differ by fractionPart. t1 and t4 differ by intPart
+	t1.fractionPart = t2.fractionPart = t4.fractionPart = 50;
+	t3.fractionPart = 100;
+	printf("T1 and T2 agree (should be true): %d\n", ntpTimeEquals(t1, t2));
+	printf("T1 and T3 agree (should be false): %d\n", ntpTimeEquals(t1, t3));
+	printf("T1 and T4 agree (should be false): %d\n", ntpTimeEquals(t1, t4));
 }
 
 int main(int argc, char** argv) {
@@ -205,7 +194,8 @@ int main(int argc, char** argv) {
 	clock_t curTime; // time passed since the start time
 
 	// Default server name
-	char defaultServerName[] = "localhost";
+	// char defaultServerName[] = "localhost";
+	char defaultServerName[] = "132.163.96.5";
 	// TODO: have tmp point to a command line argument if we have a command line argument for server name
 	char* tmp = defaultServerName;
 	int hostnameLen = strlen(tmp) + 1; // add 1 to make room for null terminator
@@ -239,10 +229,12 @@ int main(int argc, char** argv) {
 	time_t timerAccuracyChecker;
 	struct ntpTime startTimeAsNtp = getCurrentTime(startTimeInSeconds, startTime);
 
+	// REMOVE THIS LATER
+	testTimeEquals();
+
 	// loop until program should end
 	while (curTime < programLength) {
 		responsePos = 0; // start reading things into the start of the length 8 arrays
-		int prevResponsePos = -1;
 		curTime = clock() - startTime; // time since the start of the program
 		startOfBurst = curTime;
 		
@@ -260,16 +252,8 @@ int main(int argc, char** argv) {
 		responsePos = 0; // start reading at the start of the array again
 		// Listen for responses
 		while (curTime - startOfBurst < timeBetweenBursts && responsePos < 8) {
-			// check if the socket has our message https://stackoverflow.com/questions/5168372/how-to-interrupt-a-thread-which-is-waiting-on-recv-function
-			// note: the ioctlsocket might be Windows dependent. If it is, we can find a replacement, but this is the general idea. A return value of 0 means success.
-#if defined(_WIN32) || defined(WIN32)
-			long unsigned int bytesToRead = packetSize;
-			if (!ioctlsocket(sockfd, FIONREAD, &bytesToRead) && bytesToRead == (long unsigned int) packetSize && responsePos < 8) {
-#else
-			// Unix implementation
 			int bytesToRead = packetSize;
 			if (!ioctl(sockfd, FIONREAD, &bytesToRead) && bytesToRead == packetSize && responsePos < 8) {
-#endif
 				responses[responsePos] = recvMsg();
 				globalStratum = responses[responsePos].stratum;
 				++responsePos;
