@@ -6,8 +6,8 @@
 #define NTP_TIMESTAMP_DELTA 2208988800ull
 
 struct ntpTime {
-	unsigned int intPart;
-	unsigned int fractionPart;
+	uint32_t intPart;
+	uint32_t fractionPart;
 };
 
 struct ntpPacket {
