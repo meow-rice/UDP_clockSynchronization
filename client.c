@@ -36,7 +36,7 @@ int responsePos = 0; // index in responses we will read to
 clock_t pollingInterval = 4 * 60 * CLOCKS_PER_SEC; // 4 minutes between bursts
 clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
 time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
-const int packetSize = sizeof(struct ntpPacket);
+const int packetSize = 48;
 
 void error(char* msg) {
 	perror(msg); // print to stderr
