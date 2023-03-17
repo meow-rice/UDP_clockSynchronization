@@ -11,15 +11,17 @@ struct ntpTime {
 };
 
 struct ntpPacket {
-	char li;
-	char vn;
-	char mode;
+	uint8_t LI_VN_mode;
 	char stratum;
-	char poll;
-	char precision;
+	//these need to be 8-bit signed
+	signed char poll;
+	signed char precision;
+	//these sizes are right but they're 32 bit float (custom type) in implementation
 	int rootDelay; // ignore
 	int rootDispersion; // ignore
 	int referenceIdentifier; // ignore
+
+	//these are chillin
 	struct ntpTime referenceTimestamp;
 	struct ntpTime originTimestamp;
 	struct ntpTime receiveTimestamp;
