@@ -130,9 +130,6 @@ double minDelay(double delays[8]) {
 
 // Send the ntp packet.
 void sendMsg() {
-	char buf[packetSize];
-	// set every byte in the ntpPacket object to 0 so stuff we don't care about is 0
-	memset(buf, 0, packetSize);
 	char li = 0;
 	char n = 4;
 	char mode = 3; // client
@@ -147,6 +144,7 @@ void sendMsg() {
 	struct ntpPacket packet = {27, stratum, pollGlobal, 0,  0,0,0, org, org, lastRecvTime, xmtTime};
 
 	char buffer[packetSize];
+	memset(buffer, 0, packetSize); // set every byte in the buffer to 0 so stuff we don't care about is 0
 	//packet only lives for the length of this call so there's no point in allocating
 	//extra memory for network byte order.
 
