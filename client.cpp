@@ -19,6 +19,10 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 
+//needed for file write (switching to C++)
+#include <iostream>
+#include<fstream>
+
 // globals
 char* serverName = NULL;
 short serverPort = 123; // default server port
@@ -130,6 +134,9 @@ double minDelay(double delays[8]) {
 
 // Send the ntp packet.
 void sendMsg() {
+	char buf[packetSize];
+	// set every byte in the ntpPacket object to 0 so stuff we don't care about is 0
+	memset(buf, 0, packetSize);
 	char li = 0;
 	char n = 4;
 	char mode = 3; // client
@@ -144,7 +151,6 @@ void sendMsg() {
 	struct ntpPacket packet = {27, stratum, pollGlobal, 0,  0,0,0, org, org, lastRecvTime, xmtTime};
 
 	char buffer[packetSize];
-	memset(buffer, 0, packetSize); // set every byte in the buffer to 0 so stuff we don't care about is 0
 	//packet only lives for the length of this call so there's no point in allocating
 	//extra memory for network byte order.
 
@@ -160,8 +166,6 @@ void sendMsg() {
 	uint16_t htons(uint16_t hostshort);
 	uint32_t ntohl(uint32_t netlong);
 	uint16_t ntohs(uint16_t netshort);
-
-
 	*/
 	/*
 	ignore, i'm just writing to tally offset (these types would need to be changed anyway)
@@ -205,10 +209,63 @@ struct ntpPacket recvMsg() {
 	memset(buf, 0, packetSize);
 	memset((void*)&ret, 0, packetSize); // zero out the values in the packet object
 	// TODO: Read the socket into a byte buffer.
+	read(sockfd, buffer, packetsize);
+
+
 	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
 	lastRecvTime = recvTimes[responsePos];
 	// TODO: Set org equal to the server's receive time (pull it out of the packet)
+
+
 	// TODO: parse byte buffer into an ntpPacket object (ret).
+	//this of course goes under the assumption the buffer is in the right format.
+	//there's no way to confirm that unless you saw how the server was coded.
+
+	memcpy(buffer+0, &ret.LI_VN_mode, 1);
+	memcpy(buffer+1, &ret.stratum, 1);
+	memcpy(buffer+2, &ret.poll, 1);
+	memcpy(buffer+3, &ret.precision, 1);
+
+	//skip to timestamps for this project.
+	memcpy(buffer+16, &ret.referenceTimestamp.intPart, 4);
+	memcpy(buffer+20, &ret.referenceTimestamp.fractionPart, 4);
+
+	memcpy(buffer+24, &ret.originTimestamp.intPart, 4);
+	memcpy(buffer+28, &ret.originTimestamp.fractionPart, 4);
+
+	memcpy(buffer+32, &ret.receiveTimestamp.intPart, 4);
+	memcpy(buffer+36, &ret.receiveTimestamp.fractionPart, 4);
+
+	memcpy(buffer+40, &ret.transmitTimestamp.intPart, 4);
+	memcpy(buffer+44, &ret.transmitTimestamp.fractionPart, 4);
+
+	//change to host order
+	ret.referenceTimestamp.intPart = ntohl(ret.referenceTimestamp.intPart);
+	ret.referenceTimestamp.fractionPart = ntohl(ret.referenceTimestamp.fractionPart);
+
+	ret.originTimestamp.intPart = ntohl(ret.originTimestamp.intPart);
+	ret.originTimestamp.fractionPart = ntohl(ret.originTimestamp.fractionPart);
+
+	ret.receiveTimestamp.intPart = ntohl(ret.receiveTimestamp.intPart);
+	ret.receiveTimestamp.fractionPart = ntohl(ret.receiveTimestamp.fractionPart);
+
+	ret.transmitTimestamp.intPart = ntohl(ret.transmitTimestamp.intPart);
+	ret.transmitTimestamp.fractionPart = ntohl(ret.transmitTimestamp.fractionPart);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	return ret;
 }
 
@@ -320,8 +377,8 @@ int main(int argc, char** argv) {
 			struct ntpTime T1 = packet.originTimestamp;
 			// change delay and offset for missing responses to be super high
 			if(T1.intPart == 0) {
-				offsets[i] = 1000000;
-				delays[i] = 1000000;
+				offsets[i] = UINT_MAX;
+				delays[i] = UINT_MAX;
 			}
 			else {
 				struct ntpTime T2 = packet.receiveTimestamp;
@@ -341,7 +398,32 @@ int main(int argc, char** argv) {
 				break;
 			}
 		}
+
+
 		// TODO: Write delay and offset data to file
+
+		//i'm putting it here because it's easier to test (no need to wait the full 4 minutes for a file)
+
+		//TODO: the inputs to the main need to get parsed to take a string as input.
+
+		ofstream myfile;
+		string outFile;
+  	myfile.open (outFile);
+
+
+		//the above is an eight-packet burst written to each line of a file of the form//
+		//(d_0, o_0), ... , (d_k, o_k) which k in [0, 8] (some may get lost)
+		//i'll probably remove the paranthesis to make it easy to read into python but
+		for(size_t i = 1; i<NumMessages; i++){
+			if(offsets[i] < UINT_MAX){
+				std::cout<< delays[i]<<','<<offsets[i];
+				myfile<<delays[i]<<','<<offsets[i];
+			}
+
+
+		}
+
+
 
 		// wait the rest of the 4-minute delay
 		while (curTime - startOfBurst < timeBetweenBursts) {
@@ -352,5 +434,11 @@ int main(int argc, char** argv) {
 
 	free(serverName); // free the memory
 	close(sockfd);
+
+
+
+
+	//TODO: grand-loop the above to run every 4 minutes for an hour
+
 	return 0;
 }
