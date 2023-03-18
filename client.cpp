@@ -214,33 +214,29 @@ struct ntpPacket recvMsg() {
 	// Read the socket into a byte buffer.
 	read(sockfd, buffer, packetSize);
 
-
+	// set the client's receive time
 	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
 	lastRecvTime = recvTimes[responsePos];
-	// TODO: Set org equal to the server's receive time (pull it out of the packet)
 
 
-	// TODO: parse byte buffer into an ntpPacket object (ret).
-	//this of course goes under the assumption the buffer is in the right format.
-	//there's no way to confirm that unless you saw how the server was coded.
-
-	memcpy(buffer+0, &ret.LI_VN_mode, 1);
-	memcpy(buffer+1, &ret.stratum, 1);
-	memcpy(buffer+2, &ret.poll, 1);
-	memcpy(buffer+3, &ret.precision, 1);
+	// copy from buffer into ret
+	memcpy(&ret.LI_VN_mode, buffer+0, 1);
+	memcpy(&ret.stratum, buffer+1, 1);
+	memcpy(&ret.poll, buffer+2, 1);
+	memcpy(&ret.precision, buffer+3, 1);
 
 	//skip to timestamps for this project.
-	memcpy(buffer+16, &ret.referenceTimestamp.intPart, 4);
-	memcpy(buffer+20, &ret.referenceTimestamp.fractionPart, 4);
+	memcpy(&ret.referenceTimestamp.intPart, buffer+16, 4);
+	memcpy(&ret.referenceTimestamp.fractionPart, buffer+20, 4);
 
-	memcpy(buffer+24, &ret.originTimestamp.intPart, 4);
-	memcpy(buffer+28, &ret.originTimestamp.fractionPart, 4);
+	memcpy(&ret.originTimestamp.intPart, buffer+24, 4);
+	memcpy(&ret.originTimestamp.fractionPart, buffer+28, 4);
 
-	memcpy(buffer+32, &ret.receiveTimestamp.intPart, 4);
-	memcpy(buffer+36, &ret.receiveTimestamp.fractionPart, 4);
+	memcpy(&ret.receiveTimestamp.intPart, buffer+32, 4);
+	memcpy(&ret.receiveTimestamp.fractionPart, buffer+36, 4);
 
-	memcpy(buffer+40, &ret.transmitTimestamp.intPart, 4);
-	memcpy(buffer+44, &ret.transmitTimestamp.fractionPart, 4);
+	memcpy(&ret.transmitTimestamp.intPart, buffer+40, 4);
+	memcpy(&ret.transmitTimestamp.fractionPart, buffer+44, 4);
 
 	//change to host order
 	ret.referenceTimestamp.intPart = ntohl(ret.referenceTimestamp.intPart);
@@ -254,6 +250,9 @@ struct ntpPacket recvMsg() {
 
 	ret.transmitTimestamp.intPart = ntohl(ret.transmitTimestamp.intPart);
 	ret.transmitTimestamp.fractionPart = ntohl(ret.transmitTimestamp.fractionPart);
+
+	// Set org equal to the server's receive time (pull it out of the packet)
+	org = ret.receiveTimestamp;
 	return ret;
 }
 
