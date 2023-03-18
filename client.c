@@ -196,6 +196,8 @@ void sendMsg() {
 	memcpy(buffer+40, &packet.transmitTimestamp.intPart, 4);
 	memcpy(buffer+44, &packet.transmitTimestamp.fractionPart, 4);
 
+	// send over socket https://www.geeksforgeeks.org/socket-programming-cc/
+	send(sockfd, buffer, packetSize, 0);
 }
 
 struct ntpPacket recvMsg() {
@@ -247,7 +249,9 @@ void testTimeEquals() {
 int main(int argc, char** argv) {
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
 	clock_t programLength = 3600 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
-	clock_t timeBetweenBursts = pollingInterval;
+	// clock_t timeBetweenBursts = pollingInterval;
+	// JUST FOR TESTING, reduce time between bursts to 10 seconds
+	clock_t timeBetweenBursts = 10 * CLOCKS_PER_SEC;
 	clock_t startOfBurst;
 	clock_t curTime; // time passed since the start time
 	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts / CLOCKS_PER_SEC, programLength / 60 / CLOCKS_PER_SEC);
@@ -349,5 +353,6 @@ int main(int argc, char** argv) {
 	}
 
 	free(serverName); // free the memory
+	close(sockfd);
 	return 0;
 }
