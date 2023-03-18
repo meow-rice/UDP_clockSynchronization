@@ -1,5 +1,5 @@
-client: client.c
-	gcc client.c -lm -o client
+client: client.cpp
+	g++ client.cpp -lm -o client
 
 clean:
 	rm *.out *.exe || echo "delete executables"

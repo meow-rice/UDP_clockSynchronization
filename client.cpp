@@ -21,7 +21,10 @@
 
 //needed for file write (switching to C++)
 #include <iostream>
-#include<fstream>
+#include <fstream>
+#include <climits>
+
+using namespace std;
 
 // globals
 char* serverName = NULL;
@@ -45,7 +48,7 @@ clock_t startTime; // time on the clock when you started the program (we initial
 time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 const int packetSize = 48;
 
-int pollGlobal = 16; //do not need to implement poll frequency algorithm.
+unsigned char pollGlobal = 16; //do not need to implement poll frequency algorithm.
 
 void error(char* msg) {
 	perror(msg); // print to stderr
@@ -203,13 +206,13 @@ void sendMsg() {
 }
 
 struct ntpPacket recvMsg() {
-	char buf[packetSize];
+	char buffer[packetSize];
 	struct ntpPacket ret;
 	// clear memory in case it holds garbage values
-	memset(buf, 0, packetSize);
+	memset(buffer, 0, packetSize);
 	memset((void*)&ret, 0, packetSize); // zero out the values in the packet object
-	// TODO: Read the socket into a byte buffer.
-	read(sockfd, buffer, packetsize);
+	// Read the socket into a byte buffer.
+	read(sockfd, buffer, packetSize);
 
 
 	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
@@ -251,21 +254,6 @@ struct ntpPacket recvMsg() {
 
 	ret.transmitTimestamp.intPart = ntohl(ret.transmitTimestamp.intPart);
 	ret.transmitTimestamp.fractionPart = ntohl(ret.transmitTimestamp.fractionPart);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	return ret;
 }
 
@@ -302,6 +290,7 @@ void testTimeEquals() {
 }
 
 int main(int argc, char** argv) {
+	ofstream myfile; // file to write output to (I moved it here so myfile.close() would be in scope)
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
 	clock_t programLength = 3600 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
 	// clock_t timeBetweenBursts = pollingInterval;
@@ -318,7 +307,7 @@ int main(int argc, char** argv) {
 	// TODO: have tmp point to a command line argument if we have a command line argument for server name
 	char* tmp = defaultServerName;
 	int hostnameLen = strlen(tmp) + 1; // add 1 to make room for null terminator
-	serverName = malloc(hostnameLen);
+	serverName = (char*) malloc(hostnameLen);
 	strncpy(serverName, tmp, hostnameLen); // set the server name
 
 	// TODO: Possibly provide server port by command line args and modify the global serverPort
@@ -399,16 +388,14 @@ int main(int argc, char** argv) {
 			}
 		}
 
-
 		// TODO: Write delay and offset data to file
 
 		//i'm putting it here because it's easier to test (no need to wait the full 4 minutes for a file)
 
 		//TODO: the inputs to the main need to get parsed to take a string as input.
 
-		ofstream myfile;
-		string outFile;
-  	myfile.open (outFile);
+		string outFile = "output.csv";
+  		myfile.open (outFile);
 
 
 		//the above is an eight-packet burst written to each line of a file of the form//
@@ -419,11 +406,7 @@ int main(int argc, char** argv) {
 				std::cout<< delays[i]<<','<<offsets[i];
 				myfile<<delays[i]<<','<<offsets[i];
 			}
-
-
 		}
-
-
 
 		// wait the rest of the 4-minute delay
 		while (curTime - startOfBurst < timeBetweenBursts) {
@@ -434,11 +417,7 @@ int main(int argc, char** argv) {
 
 	free(serverName); // free the memory
 	close(sockfd);
-
-
-
-
-	//TODO: grand-loop the above to run every 4 minutes for an hour
-
+	myfile.close();
+	printf("Program completed.\n");
 	return 0;
 }
