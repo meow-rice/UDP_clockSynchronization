@@ -1,4 +1,5 @@
 #include <time.h>
+#include <stdint.h>
 
 // maximum number of delays or offsets to calculate
 #define MAX_NUM_MEASUREMENTS 100

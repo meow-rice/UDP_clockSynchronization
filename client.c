@@ -25,13 +25,15 @@ short serverPort = 123; // default server port
 struct sockaddr_in serv_addr; // Server address data structure.
 struct hostent* server;      // Server data structure.
 int sockfd; // socket connection
-char globalStratum = 0; // unspecified
-const size_t NumMessages = 8;
+char globalStratum = 0; // start at 0 (unspecified)
+// required to use #define instead of const for sizes of arrays at global level for some reason
+#define NumMessages 8
 double delays[NumMessages];
 double offsets[NumMessages];
 struct ntpTime org; // originate timestamp the client will send
 struct ntpTime xmtTimes[NumMessages]; // local time we sent each request
 struct ntpTime recvTimes[NumMessages]; // local time each response was received
+struct ntpTime lastRecvTime;
 struct ntpPacket responses[NumMessages];
 int responsePos = 0; // index in responses we will read to
 clock_t pollingInterval = 4 * 60 * CLOCKS_PER_SEC; // 4 minutes between bursts
@@ -135,76 +137,24 @@ void sendMsg() {
 	char n = 4;
 	char mode = 3; // client
 	char stratum = globalStratum;
-	if (org.intPart != 0) {
-		org = getCurrentTime(startTimeInSeconds, startTime);
-	}
-	//other values extracted from global arrays and passed in packet declaration
-
-
-
-
-
-
-	/*for reference
-		getCurrentTime returns ntp time object
-
-		struct ntpTime {
-			uint32_t intPart;
-			uint32_t fractionPart;
-		};
-
-
-	struct ntpPacket {
-	uint8_t LI_VN_mode;
-	char stratum;
-	//these need to be 8-bit signed
-	signed char poll;
-	signed char precision;
-	//these sizes are right but they're 32 bit float (custom type) in implementation
-	int rootDelay; // ignore
-	int rootDispersion; // ignore
-	int referenceIdentifier; // ignore
-
-	//these are chillin
-	struct ntpTime referenceTimestamp;
-	struct ntpTime originTimestamp;
-	struct ntpTime receiveTimestamp;
-	struct ntpTime transmitTimestamp;
-	};*/
 
 	//polling rate is set to 16 seconds
 	//precision is set by received messages only
 	//reference timestamp is not used in this assignment. just passing org it doesn't matter
 
-	//
-	size_t i = 0, j = 0;
-	while(recvTimes[i]!=0){i++;} //don't have to check boundary if careful elsewhere
-	if(i!=0){i--;}
-
-	while(xmtTimes[j]!=0){j++;}
-	if(j!= 0){j--;}
-
-
-	ntpPacket packet = {27, stratum, pollGlobal, 0,  0,0,0, 0 ,org, org, recvTimes[i], xmtTimes[j] };
-
-
-
-
-	//    Figure out if polling interval in the packet is 4 minutes or something else. If it is 4 minutes, use value from pollingInterval global variable.
-	//    Figure out how to calculate precision (probably uses CLOCKS_PER_SEC from time.h)
 	struct ntpTime xmtTime = getCurrentTime(startTimeInSeconds, startTime);
 	xmtTimes[responsePos] = xmtTime;
-	// TODO: Move packet into byte buffer
+	struct ntpPacket packet = {27, stratum, pollGlobal, 0,  0,0,0, org, org, lastRecvTime, xmtTime};
 
-	char buffer[6];
+	char buffer[packetSize];
 	//packet only lives for the length of this call so there's no point in allocating
 	//extra memory for network byte order.
 
 	//bytes lack endianess..
-	memcpy(buffer+0, packet.LI_VN_mode, 1);
-	memcpy(buffer+1, packet.stratum, 1);
-	memcpy(buffer+2, packet.poll, 1);
-	memcpy(buffer+3, packet.precision, 1);
+	memcpy(buffer+0, &packet.LI_VN_mode, 1);
+	memcpy(buffer+1, &packet.stratum, 1);
+	memcpy(buffer+2, &packet.poll, 1);
+	memcpy(buffer+3, &packet.precision, 1);
 
 	//these go into network byte order.
 	/*reference:
@@ -234,18 +184,17 @@ void sendMsg() {
 	packet.transmitTimestamp.intPart = htonl(packet.transmitTimestamp.intPart);
 	packet.transmitTimestamp.fractionPart = htonl(packet.transmitTimestamp.fractionPart);
 
-	memcpy(buffer+16, packet.referenceTimestamp.intPart, 4);
-	memcpy(buffer+20, packet.referenceTimestamp.fractionPart, 4);
+	memcpy(buffer+16, &packet.referenceTimestamp.intPart, 4);
+	memcpy(buffer+20, &packet.referenceTimestamp.fractionPart, 4);
 
-	memcpy(buffer+24, packet.originTimestamp.intPart, 4);
-	memcpy(buffer+28, packet.originTimestamp.fractionPart, 4);
+	memcpy(buffer+24, &packet.originTimestamp.intPart, 4);
+	memcpy(buffer+28, &packet.originTimestamp.fractionPart, 4);
 
-	memcpy(buffer+32, packet.receiveTimestamp.intPart, 4);
-	memcpy(buffer+36, packet.receiveTimestamp.fractionPart, 4);
+	memcpy(buffer+32, &packet.receiveTimestamp.intPart, 4);
+	memcpy(buffer+36, &packet.receiveTimestamp.fractionPart, 4);
 
-	memcpy(buffer+40, packet.transmitTimestamp.intPart, 4);
-	memcpy(buffer+44, packet.transmitTimestamp.fractionPart, 4);
-
+	memcpy(buffer+40, &packet.transmitTimestamp.intPart, 4);
+	memcpy(buffer+44, &packet.transmitTimestamp.fractionPart, 4);
 
 }
 
@@ -257,6 +206,8 @@ struct ntpPacket recvMsg() {
 	memset((void*)&ret, 0, packetSize); // zero out the values in the packet object
 	// TODO: Read the socket into a byte buffer.
 	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
+	lastRecvTime = recvTimes[responsePos];
+	// TODO: Set org equal to the server's receive time (pull it out of the packet)
 	// TODO: parse byte buffer into an ntpPacket object (ret).
 	return ret;
 }
@@ -322,8 +273,9 @@ int main(int argc, char** argv) {
 	org.fractionPart = 0;
 
 	// zero out the responses and recvTimes
-	memset((char*)&recvTimes, 0, 8*sizeof(struct ntpTime));
-	memset((char*)&responses, 0, 8*packetSize);
+	memset((char*)&recvTimes, 0, NumMessages*sizeof(struct ntpTime));
+	memset((char*)&lastRecvTime, 0, sizeof(struct ntpTime));
+	memset((char*)&responses, 0, NumMessages*packetSize);
 
 	// connect to the server
 	printf("Connecting to server %s at port %d\n", serverName, serverPort);
