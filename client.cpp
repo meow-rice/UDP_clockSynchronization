@@ -1,4 +1,3 @@
-
 /**
  * CSCI 5673 Distributed Systems
  * Programming Assignment 3 -- NTP
@@ -438,7 +437,6 @@ int main(int argc, char** argv) {
 		//recall format:
 		/*
 		graphFile<<"Format: Number of Sucessful Messages (say n), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
-
 		//note number of sucessful meassages n(mod 4) can be deduced from the format.
 		*/
 
@@ -459,7 +457,7 @@ int main(int argc, char** argv) {
 			}
 		}
 		//write min
-		graphFile<<offsetForMinDelay<<','<<minDelay<<'\n';
+		graphFile<<','<<offsetForMinDelay<<','<<minDelay<<'\n';
 
 		//uncomment for writing a single burst.
 		//graphFile.close();
