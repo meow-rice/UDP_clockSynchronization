@@ -448,8 +448,9 @@ int main(int argc, char** argv) {
 				graphFile<<offsets[i]<<','<<delays[i];
 				//computationally more efficient to find min here.
 				if(delays[i]<minDelay){
-					minDelay = delays[i];
 					offsetForMinDelay = offsets[i];
+					minDelay = delays[i];
+
 				}
 
 
