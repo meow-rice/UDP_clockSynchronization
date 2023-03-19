@@ -1,3 +1,4 @@
+
 /**
  * CSCI 5673 Distributed Systems
  * Programming Assignment 3 -- NTP
@@ -58,12 +59,23 @@ void error(char* msg) {
 void connectToServerUnix(const char* hostName, short port) {
 	// socket code copied from https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); // Create a UDP socket.
-	if (sockfd < 0)
-		error("ERROR opening socket");
+	if (sockfd < 0){
+		//reformat for g++ compiler
+		//char errText[] = {"ERROR opening socket"};
+		error("Error opening socket.");
+		std::cout<<"Error opening socket";
+
+	}
+
 
 	server = gethostbyname(hostName); // Convert URL to IP.
-	if (server == NULL)
+
+	if (server == NULL){
 		error("ERROR, no such host");
+		std::cout<<"Error, no such host";
+
+	}
+
 
 	// on changing bzero and bcopy https://stackoverflow.com/questions/18330673/bzero-bcopy-versus-memset-memcpy
 	// Zero out the server address structure.
@@ -73,9 +85,16 @@ void connectToServerUnix(const char* hostName, short port) {
 	memmove((char*)&serv_addr.sin_addr.s_addr, (char*)server->h_addr, server->h_length);
 	// Convert the port number integer to network big-endian style and save it to the server address structure.
 	serv_addr.sin_port = htons(port);
-	if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
+	if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0){
 		error("ERROR connecting");
+		std::cout<<"Error Connecting.";
+	}else{
+		std::cout<<"Connected!";
+	}
+
+
 }
+
 
 void connectToServer(const char* hostName, short port) {
 	connectToServerUnix(hostName, port);
@@ -302,7 +321,7 @@ int main(int argc, char** argv) {
 
 	// Default server name
 	// char defaultServerName[] = "localhost";
-	char defaultServerName[] = "132.163.96.5";
+	char defaultServerName[] = "132.163.96.1";
 	// TODO: have tmp point to a command line argument if we have a command line argument for server name
 	char* tmp = defaultServerName;
 	int hostnameLen = strlen(tmp) + 1; // add 1 to make room for null terminator
@@ -327,7 +346,7 @@ int main(int argc, char** argv) {
 	// connect to the server
 	printf("Connecting to server %s at port %d\n", serverName, serverPort);
 	connectToServer(serverName, serverPort);
-	printf("Connected!\n");
+
 
 	// start the clock
 	startTimeInSeconds = time(NULL); // system time, epoch 1970
