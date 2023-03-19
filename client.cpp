@@ -62,7 +62,7 @@ void connectToServerUnix(const char* hostName, short port) {
 		//reformat for g++ compiler
 		//char errText[] = {"ERROR opening socket"};
 		error("Error opening socket.");
-		std::cout<<"Error opening socket";
+		std::cout<<"Error opening socket\n";
 
 	}
 
@@ -71,7 +71,7 @@ void connectToServerUnix(const char* hostName, short port) {
 
 	if (server == NULL){
 		error("ERROR, no such host");
-		std::cout<<"Error, no such host";
+		std::cout<<"Error, no such host\n";
 
 	}
 
@@ -86,9 +86,9 @@ void connectToServerUnix(const char* hostName, short port) {
 	serv_addr.sin_port = htons(port);
 	if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0){
 		error("ERROR connecting");
-		std::cout<<"Error Connecting.";
+		std::cout<<"Error Connecting.\n";
 	}else{
-		std::cout<<"Connected!";
+		std::cout<<"Connected!\n";
 	}
 
 
@@ -122,8 +122,9 @@ int ntpTimeEquals(struct ntpTime t1, struct ntpTime t2) {
 // Calculate the difference in seconds between two NTP times.
 // Return secondTime - firstTime
 double timeDifference(struct ntpTime firstTime, struct ntpTime secondTime) {
-	unsigned int secondsDifference = secondTime.intPart - firstTime.intPart;
-	double fractionalDifference = pow(2,-32) * (secondTime.fractionPart - firstTime.fractionPart);
+	// I use long because it's simpler than worrying about negative numbers that come from unsigned ints
+	long secondsDifference = (long) secondTime.intPart - (long) firstTime.intPart; // allow for negative time differences
+	double fractionalDifference = pow(2,-32) * ((long) secondTime.fractionPart - (long) firstTime.fractionPart);
 	return secondsDifference + fractionalDifference;
 }
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4) {
@@ -155,9 +156,6 @@ double minDelay(double delays[8]) {
 
 // Send the ntp packet.
 void sendMsg() {
-	char buf[packetSize];
-	// set every byte in the ntpPacket object to 0 so stuff we don't care about is 0
-	memset(buf, 0, packetSize);
 	char li = 0;
 	char n = 4;
 	char mode = 3; // client
@@ -169,9 +167,12 @@ void sendMsg() {
 
 	struct ntpTime xmtTime = getCurrentTime(startTimeInSeconds, startTime);
 	xmtTimes[responsePos] = xmtTime;
-	struct ntpPacket packet = {27, stratum, pollGlobal, 0,  0,0,0, org, org, lastRecvTime, xmtTime};
+	// li_vn_mode =
+	uint8_t li_vn_mode = mode | (n << 3); // becomes 35 instead of 27 because we use version 4
+	struct ntpPacket packet = {li_vn_mode, stratum, pollGlobal, 0,  0,0,0, org, org, lastRecvTime, xmtTime};
 
 	char buffer[packetSize];
+	memset(buffer, 0, packetSize);
 	//packet only lives for the length of this call so there's no point in allocating
 	//extra memory for network byte order.
 
@@ -344,10 +345,6 @@ int main(int argc, char** argv) {
 
 	// TODO: Possibly provide server port by command line args and modify the global serverPort
 
-	// zero out the delays and offsets arrays
-	memset((char*)&delays, 0, 8 * sizeof(double));
-	memset((char*)&offsets, 0, 8 * sizeof(double));
-
 	// initialize org
 	org.intPart = 0;
 	org.fractionPart = 0;
@@ -365,6 +362,7 @@ int main(int argc, char** argv) {
 	// start the clock
 	startTimeInSeconds = time(NULL); // system time, epoch 1970
 	startTime = clock(); // processor time measured in CLOCKS_PER_SEC
+	curTime = clock() - startTime; // time since the start of the program
 
 	// loop until program should end
 	while (curTime < programLength) {
@@ -373,7 +371,11 @@ int main(int argc, char** argv) {
 		responsePos = 0; // start reading things into the start of the length 8 arrays
 		curTime = clock() - startTime; // time since the start of the program
 		startOfBurst = curTime;
-		printf("Starting burst\n");
+		printf("Starting burst %ld\n", burstNumber);
+
+		// zero out the delays and offsets arrays
+		memset((char*)&delays, 0, 8 * sizeof(double));
+		memset((char*)&offsets, 0, 8 * sizeof(double));
 
 		// Do a burst (send all msgs without waiting for a response)
 		for(responsePos = 0; responsePos < 8; ++responsePos) {
@@ -419,20 +421,13 @@ int main(int argc, char** argv) {
 				measurementFile<<((double)T2.intPart + pow(2,-32) * T2.fractionPart)<<',';
 				measurementFile<<((double)T3.intPart + pow(2,-32) * T3.fractionPart)<<',';
 				measurementFile<<((double)T4.intPart + pow(2,-32) * T4.fractionPart);
-
-
 			}
 			if(i==responsePos-1){measurementFile<<'\n';}
 			else{
 				measurementFile<<',';
-			};
-
+			}
 			printf("Packet %d has delay %f, offset %f\n", i, delays[i], offsets[i]);
 		}
-
-
-
-
 
 		//recall format:
 		/*
@@ -441,29 +436,20 @@ int main(int argc, char** argv) {
 		*/
 
 		graphFile<<numMessages<<','<<burstNumber<<',';
-		double minDelay = UINT_MAX, offsetForMinDelay = UINT_MAX;
+		double _minDelay = UINT_MAX, offsetForMinDelay = UINT_MAX;
 		for(size_t i = 1; i<NumMessages; i++){
 			if(offsets[i] < UINT_MAX){
-				std::cout<<offsets[i]<<','<<delays[i];
-				graphFile<<offsets[i]<<','<<delays[i];
+				std::cout<<offsets[i]<<','<<delays[i]<<',';
+				graphFile<<offsets[i]<<','<<delays[i]<<',';
 				//computationally more efficient to find min here.
-				if(delays[i]<minDelay){
+				if(delays[i]<_minDelay){
 					offsetForMinDelay = offsets[i];
-					minDelay = delays[i];
-
+					_minDelay = delays[i];
 				}
-
-
-
 			}
 		}
 		//write min
-		graphFile<<','<<offsetForMinDelay<<','<<minDelay<<'\n';
-
-		//uncomment for writing a single burst.
-		//graphFile.close();
-		//measurementFile.close();
-
+		graphFile<<offsetForMinDelay<<','<<_minDelay<<'\n';
 
 		// wait the rest of the 4-minute delay
 		while (curTime - startOfBurst < timeBetweenBursts) {
