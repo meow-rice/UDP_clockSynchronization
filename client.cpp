@@ -49,7 +49,7 @@ clock_t startTime; // time on the clock when you started the program (we initial
 time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 const int packetSize = 48;
 
-unsigned char pollGlobal = 16; //do not need to implement poll frequency algorithm.
+signed char pollGlobal = 16; //do not need to implement poll frequency algorithm.
 
 void error(char* msg) {
 	perror(msg); // print to stderr
@@ -308,9 +308,21 @@ void testTimeEquals() {
 }
 
 int main(int argc, char** argv) {
-	ofstream myfile; // file to write output to (I moved it here so myfile.close() would be in scope)
+
+	ofstream graphFile;
+	ofstream measurementFile;
+	//TODO: the inputs to the main need to get parsed to take a strings as input.
+	//TODO: write/parse csv file for rawMeasurementData
+	string graphData = "graphData.csv";
+	string rawMeasurementData = "rawMeasurementData.csv";
+	graphFile.open(graphData);
+	measurementFile.open(rawMeasurementData);
+
+	//state format
+	graphFile<<"Format: Number of successful Messages (say n<=8), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
+	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
-	clock_t programLength = 3600 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
+	clock_t programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
 	// clock_t timeBetweenBursts = pollingInterval;
 	// JUST FOR TESTING, reduce time between bursts to 10 seconds
 	clock_t timeBetweenBursts = 10 * CLOCKS_PER_SEC;
@@ -318,6 +330,9 @@ int main(int argc, char** argv) {
 	clock_t curTime; // time passed since the start time
 	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts / CLOCKS_PER_SEC, programLength / 60 / CLOCKS_PER_SEC);
 	printf("Press CTRL + C to stop the server\n");
+
+	size_t burstNumber = 0;
+	size_t numMessages;
 
 	// Default server name
 	// char defaultServerName[] = "localhost";
@@ -354,6 +369,8 @@ int main(int argc, char** argv) {
 
 	// loop until program should end
 	while (curTime < programLength) {
+		burstNumber++;
+		numMessages = 0;
 		responsePos = 0; // start reading things into the start of the length 8 arrays
 		curTime = clock() - startTime; // time since the start of the program
 		startOfBurst = curTime;
@@ -379,6 +396,7 @@ int main(int argc, char** argv) {
 		responsePos = 8; // make sure we cycle through all responses, even ones that were lost.
 		sortResponses(responses);
 		// calculate offsets and delays
+		measurementFile<<burstNumber<<',';
 		for (int i = 0; i < responsePos; i++) {
 			struct ntpPacket packet = responses[i];
 			struct ntpTime T1 = packet.originTimestamp;
@@ -393,38 +411,60 @@ int main(int argc, char** argv) {
 				struct ntpTime T4 = recvTimes[i];
 				offsets[i] = calculateOffset(T1, T2, T3, T4);
 				delays[i] = calculateRoundtripDelay(T1, T2, T3, T4);
+
+				numMessages+=1;
+				//write to measurementFile
+				//recall format measurementFile<<"Format: Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n,\n";
+
+				measurementFile<<((double)T1.intPart + pow(2,-32) * T1.fractionPart)<<',';
+				measurementFile<<((double)T2.intPart + pow(2,-32) * T2.fractionPart)<<',';
+				measurementFile<<((double)T3.intPart + pow(2,-32) * T3.fractionPart)<<',';
+				measurementFile<<((double)T4.intPart + pow(2,-32) * T4.fractionPart);
+
+
 			}
+			if(i==responsePos-1){measurementFile<<'\n';}
+			else{
+				measurementFile<<',';
+			};
+
 			printf("Packet %d has delay %f, offset %f\n", i, delays[i], offsets[i]);
 		}
-		double _minDelay = minDelay(delays);
-		double _minOffset = 0.0;
-		// based on the assignment, we're supposed to get the offset for the same packet as the min delay
-		for(int i = 0; i < 8; ++i) {
-			if(delays[i] == _minDelay) {
-				_minOffset = offsets[i];
-				break;
-			}
-		}
-
-		// TODO: Write delay and offset data to file
-
-		//i'm putting it here because it's easier to test (no need to wait the full 4 minutes for a file)
-
-		//TODO: the inputs to the main need to get parsed to take a string as input.
-
-		string outFile = "output.csv";
-  		myfile.open (outFile);
 
 
-		//the above is an eight-packet burst written to each line of a file of the form//
-		//(d_0, o_0), ... , (d_k, o_k) which k in [0, 8] (some may get lost)
-		//i'll probably remove the paranthesis to make it easy to read into python but
+
+
+
+		//recall format:
+		/*
+		graphFile<<"Format: Number of Sucessful Messages (say n), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
+
+		//note number of sucessful meassages n(mod 4) can be deduced from the format.
+		*/
+
+		graphFile<<numMessages<<','<<burstNumber<<',';
+		double minDelay = UINT_MAX, offsetForMinDelay = UINT_MAX;
 		for(size_t i = 1; i<NumMessages; i++){
 			if(offsets[i] < UINT_MAX){
-				std::cout<< delays[i]<<','<<offsets[i];
-				myfile<<delays[i]<<','<<offsets[i];
+				std::cout<<offsets[i]<<','<<delays[i];
+				graphFile<<offsets[i]<<','<<delays[i];
+				//computationally more efficient to find min here.
+				if(delays[i]<minDelay){
+					minDelay = delays[i];
+					offsetForMinDelay = offsets[i];
+				}
+
+
+
 			}
 		}
+		//write min
+		graphFile<<offsetForMinDelay<<','<<minDelay<<'\n';
+
+		//uncomment for writing a single burst.
+		//graphFile.close();
+		//measurementFile.close();
+
 
 		// wait the rest of the 4-minute delay
 		while (curTime - startOfBurst < timeBetweenBursts) {
@@ -435,7 +475,8 @@ int main(int argc, char** argv) {
 
 	free(serverName); // free the memory
 	close(sockfd);
-	myfile.close();
+	graphFile.close();
+	measurementFile.close();
 	printf("Program completed.\n");
 	return 0;
 }
