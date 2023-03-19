@@ -1,0 +1,13 @@
+
+
+make nist plot
+
+write local server and make plot (should be easy/quick after above)
+
+socket google cloud server and make plot
+
+Parse args in main to take option for server(1, 2 ,3 in prompt), and file output names
+make pdf for writeup
+
+
+
