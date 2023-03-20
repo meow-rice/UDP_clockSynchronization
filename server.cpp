@@ -7,7 +7,7 @@
  */
 
 // NOTE: This server is built to only handle one client at a time for the whole 1 hour session.
-// NOTE: With current implementation, you need to stop and restart the server in order to allow a new client to join
+//    This is not actually confirmed. We have tested with only one client.
 // Socket code is based on this example: https://www.ibm.com/docs/en/zos/2.1.0?topic=programs-c-socket-udp-server
 
 #include "client.h" // has some constants and structs
@@ -56,18 +56,6 @@ int main(int argc, char** argv) {
         // this function automatically sets org and lastRecvTime for us.
         recvMsg(serverfd, recvTimes, 0, &org, &lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
         printf("Received packet from client %s, port %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
-
-        /*
-        // build a connection back to the client
-        // ASSUMPTION: Only one client will ever connect to this server in the server's lifetime!
-        if(clientfd == 0) {
-            printf("Creating connection back to client\n");
-            if(connect(clientfd, (struct sockaddr*)&client, clientAddressSize)) {
-                perror("Error creating connection back to client\n");
-                exit(1);
-            }
-        }
-        */
 
         // this function will automatically calculate the transmit time and use the previously found org and receive times.
         sendMsg(serverfd, xmtTimes, 0, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
