@@ -30,7 +30,6 @@ struct ntpTime recvTimes[NumMessages]; // local time each response was received
 struct ntpTime lastRecvTime;
 struct ntpPacket responses[NumMessages];
 int responsePos = 0; // index in responses we will read to
-clock_t pollingInterval = 4 * 60 * CLOCKS_PER_SEC; // 4 minutes between bursts
 clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
 time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 
@@ -170,9 +169,9 @@ int main(int argc, char** argv) {
 	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
 	clock_t programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
-	// clock_t timeBetweenBursts = pollingInterval;
+	clock_t timeBetweenBursts = pollingInterval;
 	// JUST FOR TESTING, reduce time between bursts to 10 seconds
-	clock_t timeBetweenBursts = 10 * CLOCKS_PER_SEC;
+	timeBetweenBursts = 10 * CLOCKS_PER_SEC;
 	clock_t startOfBurst;
 	clock_t curTime; // time passed since the start time
 	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts / CLOCKS_PER_SEC, programLength / 60 / CLOCKS_PER_SEC);
@@ -227,14 +226,14 @@ int main(int argc, char** argv) {
 
 		// Do a burst (send all msgs without waiting for a response)
 		for(int sendPos = 0; sendPos < 8; ++sendPos) {
-			sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime);
+			sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, 0, NULL, NULL);
 		}
 		// Listen for responses
 		while (curTime - startOfBurst < timeBetweenBursts && responsePos < 8) {
 			int bytesToRead = packetSize;
 			// read a response if one exists
 			if (!ioctl(sockfd, FIONREAD, &bytesToRead) && bytesToRead == packetSize && responsePos < 8) {
-				responses[responsePos] = recvMsg(sockfd, recvTimes, responsePos, &org, &lastRecvTime, startTimeInSeconds, startTime);
+				responses[responsePos] = recvMsg(sockfd, recvTimes, responsePos, &org, &lastRecvTime, startTimeInSeconds, startTime, 0, NULL, NULL);
 				globalStratum = responses[responsePos].stratum;
 				++responsePos;
 			}

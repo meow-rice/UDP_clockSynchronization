@@ -17,7 +17,8 @@
 // required to use #define instead of const for sizes of arrays at global level for some reason
 #define NumMessages 8
 const int packetSize = 48;
-const signed char pollGlobal = 16; //do not need to implement poll frequency algorithm.
+const signed char pollGlobal = 4 * 60; // 4 minutes between bursts; use this variable in the ntp packet poll variable
+clock_t pollingInterval = pollGlobal * CLOCKS_PER_SEC; // 4 minutes between bursts
 
 struct ntpTime {
 	uint32_t intPart;
@@ -53,8 +54,9 @@ double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, 
 double minOffset(double offsets[8]);
 double calculateRoundtripDelay(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);
 double minDelay(double delays[8]);
-void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime);
-struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime);
+void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime, int isServer, struct sockaddr_in* client, int* clientAddressSize);
+// the parts of recvMsg past "int isServer" are what allow the server to respond to the client
+struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime, int isServer, struct sockaddr_in* client, int* clientAddressSize);
 void sortResponses(struct ntpPacket responses[8]);
 
 // Return the current system time as an NTP time. I'm not sure how precise this method is.
@@ -76,7 +78,7 @@ struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplication
 }
 
 // Send the ntp packet.
-void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime) {
+void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime, int isServer, struct sockaddr_in* client, int* clientAddressSize) {
 	char li = 0;
 	char vn = 4;
 	char mode = 3; // client
@@ -140,18 +142,35 @@ void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, s
 	memcpy(buffer+40, &packet.transmitTimestamp.intPart, 4);
 	memcpy(buffer+44, &packet.transmitTimestamp.fractionPart, 4);
 
-	// send over socket https://www.geeksforgeeks.org/socket-programming-cc/
-	send(sockfd, buffer, packetSize, 0);
+	if(isServer) {
+		// https://pubs.opengroup.org/onlinepubs/009604499/functions/sendto.html
+		if (sendto(sockfd, buffer, packetSize, 0, (struct sockaddr*)client, (socklen_t)*clientAddressSize) < 0) {
+			perror("Error sending packet using sendto\n");
+		}
+	}
+	else {
+		// send over socket https://www.geeksforgeeks.org/socket-programming-cc/
+		send(sockfd, buffer, packetSize, 0);
+	}
 }
 
-struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime) {
+struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime, int isServer, struct sockaddr_in* client, int* clientAddressSize) {
 	char buffer[packetSize];
 	struct ntpPacket ret;
 	// clear memory in case it holds garbage values
 	memset(buffer, 0, packetSize);
 	memset((void*)&ret, 0, packetSize); // zero out the values in the packet object
 	// Read the socket into a byte buffer.
-	read(sockfd, buffer, packetSize);
+	if (isServer) {
+		// hopefully this grabs the whole packet at once
+		// https://pubs.opengroup.org/onlinepubs/007904875/functions/recvfrom.html
+		if ( recvfrom(sockfd, buffer, packetSize, 0, (struct sockaddr*)client, (socklen_t*)clientAddressSize) < 0 ) {
+			perror("Error reading socket while receiving message");
+		}
+	}
+	else {
+		read(sockfd, buffer, packetSize);
+	}
 
 	// set the client's receive time
 	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
