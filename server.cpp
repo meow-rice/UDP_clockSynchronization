@@ -22,20 +22,14 @@ char globalStratum = 1;
 
 int main(int argc, char** argv) {
     short port = 8100;
-    int serverfd, clientfd, clientAddressSize;
-    serverfd = clientfd = clientAddressSize = 0;
+    int serverfd, clientAddressSize;
+    serverfd = clientAddressSize = 0;
     struct sockaddr_in server, client;
     int addrlen = sizeof(server);
 
     // Create server socket (file descriptor, not connection)
     if ((serverfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Socket failed");
-        exit(1);
-    }
-    // Create client socket (file descriptor, not connection yet)
-    printf("Creating socket for client connection\n");
-    if((clientfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("Trouble creating socket for client connection\n");
         exit(1);
     }
     server.sin_family = AF_INET;
@@ -76,12 +70,10 @@ int main(int argc, char** argv) {
         */
 
         // this function will automatically calculate the transmit time and use the previously found org and receive times.
-        sendMsg(clientfd, xmtTimes, 0, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
+        sendMsg(serverfd, xmtTimes, 0, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
     }
     printf("Stopping program.\n");
     if(serverfd > 0)
         close(serverfd);
-    if(clientfd > 0)
-        close(clientfd);
     return 0;
  }
