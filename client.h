@@ -14,6 +14,8 @@
 #define MAX_NUM_MEASUREMENTS 100
 // from NTP client example https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 #define NTP_TIMESTAMP_DELTA 2208988800ull
+// required to use #define instead of const for sizes of arrays at global level for some reason
+#define NumMessages 8
 const int packetSize = 48;
 const signed char pollGlobal = 16; //do not need to implement poll frequency algorithm.
 
@@ -188,7 +190,7 @@ struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos
 	ret.transmitTimestamp.intPart = ntohl(ret.transmitTimestamp.intPart);
 	ret.transmitTimestamp.fractionPart = ntohl(ret.transmitTimestamp.fractionPart);
 
-	// Set org equal to the server's receive time (pull it out of the packet)
-	*org = ret.receiveTimestamp;
+	// Set org equal to the server's send time (pull it out of the packet)
+	*org = ret.transmitTimestamp;
 	return ret;
 }

@@ -6,6 +6,8 @@
  * Maurice Alexander
  */
 
+ // NOTE: This client currently does not do retransmissions of dropped packets; it simply does best-effort.
+
 #include "client.h"
 #include <stdlib.h>
 #include <sys/ioctl.h>
@@ -18,14 +20,8 @@
 using namespace std;
 
 // globals
-char* serverName = NULL;
-short serverPort = 123; // default server port
-struct sockaddr_in serv_addr; // Server address data structure.
-struct hostent* server;      // Server data structure.
 int sockfd; // socket connection
 char globalStratum = 0; // start at 0 (unspecified)
-// required to use #define instead of const for sizes of arrays at global level for some reason
-#define NumMessages 8
 double delays[NumMessages];
 double offsets[NumMessages];
 struct ntpTime org; // originate timestamp the client will send
@@ -44,6 +40,8 @@ void error(char* msg) {
 }
 
 void connectToServerUnix(const char* hostName, short port) {
+	struct sockaddr_in serv_addr; // Server address data structure.
+	struct hostent* server;      // Server data structure.
 	// socket code copied from https://lettier.github.io/posts/2016-04-26-lets-make-a-ntp-client-in-c.html
 	sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP); // Create a UDP socket.
 	if (sockfd < 0){
@@ -153,11 +151,15 @@ void testTimeEquals() {
 }
 
 int main(int argc, char** argv) {
-
+	char* serverName = NULL;
+	short serverPort = 123; // default server port
+	//short serverPort = 8100;
+	char defaultServerName[] = "132.163.96.1";
+	char localhost[] = "localhost";
+	char* tmp = defaultServerName; // tmp will point to a different string if we use non-default options for serverName
 	ofstream graphFile;
 	ofstream measurementFile;
 	//TODO: the inputs to the main need to get parsed to take a strings as input.
-	//TODO: write/parse csv file for rawMeasurementData
 	string graphData = "graphData.csv";
 	string rawMeasurementData = "rawMeasurementData.csv";
 	graphFile.open(graphData);
@@ -179,11 +181,12 @@ int main(int argc, char** argv) {
 	size_t burstNumber = 0;
 	size_t numMessages;
 
-	// Default server name
-	// char defaultServerName[] = "localhost";
-	char defaultServerName[] = "132.163.96.1";
-	// TODO: have tmp point to a command line argument if we have a command line argument for server name
-	char* tmp = defaultServerName;
+	// Command line option 2 is local server
+	printf("Checking for special command line options\n");
+	if(argc > 1 && strlen(argv[1]) == 1 && argv[1][0] == '2') {
+		tmp = localhost;
+		serverPort = 8100;
+	}
 	int hostnameLen = strlen(tmp) + 1; // add 1 to make room for null terminator
 	serverName = (char*) malloc(hostnameLen);
 	strncpy(serverName, tmp, hostnameLen); // set the server name
