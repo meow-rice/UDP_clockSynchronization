@@ -95,6 +95,7 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 	int tolIndex = 0;
 	int res = 0; // response from nanosleep
 
+	/*
 	while(iter < attempts) {
 		time(&startClockSynchronizer);
 		printf("Start clock synchronizer = %ld\n", startClockSynchronizer);
@@ -109,7 +110,7 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 				} while(res && errno == EINTR);
 				time(startTimesInSeconds + iter); // record the time again after the wait
 				startTimes[iter] = clock();
-				printf("Slept for %ld nanoseconds, time = %ld\n", timesToWait[tolIndex].tv_nsec, startTimesInSeconds[iter]);
+				// printf("Slept for %ld nanoseconds, time = %ld\n", timesToWait[tolIndex].tv_nsec, startTimesInSeconds[iter]);
 				++tolIndex;
 
 			} while (tolIndex < numTolerances && startTimesInSeconds[iter] == startClockSynchronizer);
@@ -121,7 +122,7 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 		if(iter >= attempts || tolIndex >= numTolerances) {
 			break;
 		}
-		
+
 		// Whenever you fail to fully synchronize (and you haven't gone through all the attempts yet),
 		// wait for (1 second - last amount of time waited) and continue with the next timeToWait (the next power of 2)
 		struct timespec rem = timesToWaitAfterFailure[tolIndex - 1]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
@@ -140,6 +141,18 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 	signed char minPower = achievedPrecisions[minIndex];
 	*startTimeInSeconds = startTimesInSeconds[minIndex];
 	*startTime = startTimes[minIndex];
+	*/
+
+	signed char minPower = 0; // meaningless value to return if we use this method
+	time(&startClockSynchronizer);
+	time_t tmpTimeT;
+	clock_t tmpClock;
+	do {
+		time(&tmpTimeT); // record the time again after the wait
+		tmpClock = clock();
+	} while (tmpTimeT == startClockSynchronizer);
+	*startTimeInSeconds = tmpTimeT;
+	*startTime = tmpClock;
 
 	// clean up
 	free(powers);
