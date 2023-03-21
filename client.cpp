@@ -16,7 +16,7 @@
 #include <iostream>
 #include <fstream>
 #include <climits>
-
+#include<iomanip>
 using namespace std;
 
 // globals
@@ -352,10 +352,11 @@ int main(int argc, char** argv) {
 				//write to measurementFile
 				//recall format measurementFile<<"Format: Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n,\n";
 
-				measurementFile<<((double)T1.intPart + pow(2,-32) * T1.fractionPart)<<',';
-				measurementFile<<((double)T2.intPart + pow(2,-32) * T2.fractionPart)<<',';
-				measurementFile<<((double)T3.intPart + pow(2,-32) * T3.fractionPart)<<',';
-				measurementFile<<((double)T4.intPart + pow(2,-32) * T4.fractionPart);
+				// 9 precision for billions of seconds + 9 precision for nanoseconds
+				measurementFile<<setprecision(10)<<(double)T1.intPart << "s " << pow(2,-32) * T1.fractionPart << " ns,";
+				measurementFile<<(double)T2.intPart << " s " << pow(2,-32) * T2.fractionPart << " ns,";
+				measurementFile<<(double)T3.intPart << " s " << pow(2,-32) * T3.fractionPart << " ns,";
+				measurementFile<<(double)T4.intPart << " s " << pow(2,-32) * T4.fractionPart << " ns";
 			}
 			if(i==responsePos-1){measurementFile<<'\n';}
 			else{
