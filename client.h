@@ -20,8 +20,10 @@
 #define NumMessages 8
 const int packetSize = 48;
 const signed char pollGlobal = 4 * 60; // 4 minutes between bursts; use this variable in the ntp packet poll variable
-clock_t pollingInterval = pollGlobal * CLOCKS_PER_SEC; // 4 minutes between bursts
-const signed char clockPrecision = floor(-log10(CLOCKS_PER_SEC) / log10(2.0)) + 1; // upper bound of log2(clock precision), to pass into NTP and to synchronize start time to the beginning of a second on the system clock
+// const signed char clockPrecision = floor(-log10(CLOCKS_PER_SEC) / log10(2.0)) + 1; // upper bound of log2(clock precision), to pass into NTP and to synchronize start time to the beginning of a second on the system clock
+const signed char clockPrecision = floor(-9 / log10(2.0)) + 1; // upper limit of nanosecond precision in base 2
+const double nanosecondCoefficient = pow(10, -9); // for use with representing timespecs in decimal form
+
 
 struct ntpTime {
 	uint32_t intPart;
@@ -48,7 +50,7 @@ struct ntpPacket {
 
 void error(char* msg); // print error messages
 void connectToServer(const char* hostName, short port);
-signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsigned int attempts, time_t* startTimeInSeconds, clock_t* startTime);
+void synchronizeStartClock(time_t* startTimeInSeconds, struct timespec* startTime);
 // Return the current system time as an NTP time
 struct ntpTime getCurrentTime(time_t baselineTime, clock_t precisionUnitsSinceBaseline);
 // Calculate the difference in seconds between two NTP times.
@@ -58,129 +60,50 @@ double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, 
 double minOffset(double offsets[8]);
 double calculateRoundtripDelay(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);
 double minDelay(double delays[8]);
-void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
+void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, struct tmiespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
 // the parts of recvMsg past "int isServer" are what allow the server to respond to the client
-struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
+struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, struct timespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
 void sortResponses(struct ntpPacket responses[8]);
 
 
-// Help to synchronize the clock's start time with the beginning of a second on the system clock
-// Return the actual tolerance the time was synchronized within
-signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsigned int attempts, time_t* startTimeInSeconds, clock_t* startTime) {
-	if(log2tolerance >= 0) {
-		return 0;
-	}
-	printf("Attempting to synchronize clock to beginning of the system time second using a precision of 2^%d using %u maximum attempts\n", log2tolerance, attempts);
-	unsigned int numTolerances = -1 * log2tolerance;
-	signed char* powers = (signed char*) malloc(numTolerances*sizeof(signed char));
-	// sleep using nanoseconds https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
-	struct timespec* timesToWait = (struct timespec*) malloc(numTolerances*sizeof(struct timespec)); // times to wait, in nanoseconds
-	struct timespec* timesToWaitAfterFailure = (struct timespec*) malloc(numTolerances*sizeof(struct timespec));
-	// initialize arrays used for calculations
-	for(int i = 0; i < numTolerances; i++) {
-		signed char power = -1 - i;
-		powers[i] = power;
-		timesToWait[i].tv_sec = 0; // seconds to wait
-		timesToWait[i].tv_nsec = (long) (1000000000 * pow(2, power)); // nanoseconds to wait
-		timesToWaitAfterFailure[i].tv_sec = 0;
-		timesToWaitAfterFailure[i].tv_nsec = (long) 1000000000 - timesToWait[i].tv_nsec;
-	}
-	
-	// arrays to hold contenders for best start time
-	signed char* achievedPrecisions = (signed char*) calloc(attempts, sizeof(signed char));
-	time_t* startTimesInSeconds = (time_t*) calloc(attempts, sizeof(time_t));
-	clock_t* startTimes = (clock_t*) calloc(attempts, sizeof(clock_t));
-	time_t startClockSynchronizer; // help the start clock start as close as possible to the start of a new second
-	int iter = 0;
-	int tolIndex = 0;
-	int res = 0; // response from nanosleep
-
-	/*
-	while(iter < attempts) {
-		time(&startClockSynchronizer);
-		printf("Start clock synchronizer = %ld\n", startClockSynchronizer);
-		// for the current attempt, wait increasingly short times until we run into the next second above startClockSynchronizer in system time
-		if(tolIndex < numTolerances) { // this if statement avoids an infinite loop due to weirdness of do/while
-			do {
-				// nanosleep code from https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
-				// sleep for the current timem interval (power of 2)
-				struct timespec rem = timesToWait[tolIndex]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
-				do {
-					res = nanosleep(&rem, &rem);
-				} while(res && errno == EINTR);
-				time(startTimesInSeconds + iter); // record the time again after the wait
-				startTimes[iter] = clock();
-				// printf("Slept for %ld nanoseconds, time = %ld\n", timesToWait[tolIndex].tv_nsec, startTimesInSeconds[iter]);
-				++tolIndex;
-
-			} while (tolIndex < numTolerances && startTimesInSeconds[iter] == startClockSynchronizer);
-		}
-		
-		achievedPrecisions[iter] = powers[tolIndex - 1];
-		printf("Iter %d achieved precision %d at time %ld\n", iter, achievedPrecisions[iter], startTimesInSeconds[iter]);
-		++iter; // proceed to the next attempt
-		if(iter >= attempts || tolIndex >= numTolerances) {
-			break;
-		}
-
-		// Whenever you fail to fully synchronize (and you haven't gone through all the attempts yet),
-		// wait for (1 second - last amount of time waited) and continue with the next timeToWait (the next power of 2)
-		struct timespec rem = timesToWaitAfterFailure[tolIndex - 1]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
-		do {
-			res = nanosleep(&rem, &rem);
-		} while(res && errno == EINTR);
-	}
-
-	// set startTimeInSeconds and startTime
-	int minIndex = 0;
-	for(int i = 1; i < attempts; ++i) {
-		if(achievedPrecisions[i] < achievedPrecisions[minIndex]) {
-			minIndex = i;
-		}
-	}
-	signed char minPower = achievedPrecisions[minIndex];
-	*startTimeInSeconds = startTimesInSeconds[minIndex];
-	*startTime = startTimes[minIndex];
-	*/
-
-	signed char minPower = 0; // meaningless value to return if we use this method
+// The better way to align the start of the program clock with the start of a second in system time
+void synchronizeStartClock(time_t* startTimeInSeconds, struct timespec* startTime) {
+	time_t startClockSynchronizer;
 	time(&startClockSynchronizer);
 	time_t tmpTimeT;
-	clock_t tmpClock;
+	struct timespec tmpClock;
+	// loop until you reach the start of the next second
 	do {
 		time(&tmpTimeT); // record the time again after the wait
-		tmpClock = clock();
+		timespec_get(&tmpClock, TIME_UTC); // unhandled exception
 	} while (tmpTimeT == startClockSynchronizer);
 	*startTimeInSeconds = tmpTimeT;
 	*startTime = tmpClock;
-
-	// clean up
-	free(powers);
-	free(timesToWait);
-	free(timesToWaitAfterFailure);
-	free(achievedPrecisions);
-	free(startTimesInSeconds);
-	free(startTimes);
-	return minPower;
 }
 
 // Return the current system time as an NTP time. I'm not sure how precise this method is.
 // Constraint: Algorithm only works on a Little Endian system.
 // Precondition: baselineTime and baselineInApplicationClock are measured at the same time prior to calling this function.
-struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplicationClock) {
-	clock_t currentTime = clock();
-	// printf("getCurrentTime() clock value is %ld\n", currentTime);
-	clock_t diffInTimeUnits = currentTime - baselineInApplicationClock;
-	double diffInSeconds = (double) diffInTimeUnits / CLOCKS_PER_SEC;
-	// printf("getCurrentTime() diffInSeconds is %f\n", diffInSeconds);
-	// attempting to extract fraction part and int part without losing precision https://stackoverflow.com/questions/5589383/extract-fractional-part-of-double-efficiently-in-c
-	double diffInFractionalSeconds = diffInSeconds - floor(diffInSeconds);
-	int integerSecondsSinceBaseline = (int) floor(diffInSeconds);
-	time_t currentTimeSince1900 = baselineTime + integerSecondsSinceBaseline + NTP_TIMESTAMP_DELTA;
+struct ntpTime getCurrentTime(struct timespec baselineTime) {
+	struct timespec currentTime;
+	int timeBase;
+	if((timeBase = timespec_get(&currentTime, TIME_UTC)) < 0) {
+		perror("Error reading current time\n");
+		exit(1);
+	}
+	// printf("getCurrentTime() timespec_get() value is %f %s (%d)\n", (double) currentTime.tv_sec + nanosecondCoefficient * currentTime.tv_nsec, timeBase == TIME_UTC? "UTC" : "UNKNOWN TIMEBASE", timeBase);
 	
-	//time_t currentTimeSince1900 = time(NULL) + NTP_TIMESTAMP_DELTA;
-	//double diffInFractionalSeconds = 0.0;
-
+	time_t integerSecondsSinceBaseline = currentTime.tv_sec - baselineTime.tv_sec;
+	// attempting to extract fraction part and int part without losing precision https://stackoverflow.com/questions/5589383/extract-fractional-part-of-double-efficiently-in-c
+	long diffInNanoseconds = currentTime.tv_nsec - baselineTime.tv_nsec;
+	// If the difference in nanoseconds is negative, then reduce the intPart by 1 second and increase the fractionPart by 1 second
+	if(diffInNanoseconds < 0) {
+		integerSecondsSinceBaseline -= 1;
+		diffInNanoseconds += 1000000000;
+	}
+	double diffInFractionalSeconds = nanosecondCoefficient * diffInNanoseconds;
+	time_t currentTimeSince1900 = baselineTime.tv_sec + integerSecondsSinceBaseline + NTP_TIMESTAMP_DELTA;
+	
 	struct ntpTime ret;
 	ret.intPart = (unsigned int) currentTimeSince1900; // must fit in 32 bits
 	ret.fractionPart = (unsigned int) (diffInFractionalSeconds * pow(2,32)); // fractional part represented as a sequence of 32 bits, assuming little endian
@@ -188,7 +111,7 @@ struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplication
 }
 
 // Send the ntp packet.
-void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, time_t startTimeInSeconds, clock_t startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize) {
+void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, struct timespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize) {
 	char li = 0;
 	char vn = 4;
 	char mode = 3; // client
@@ -197,7 +120,7 @@ void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, s
 	//precision is clockPrecision from client.h, which is log2 of the time.h clock() CLOCKS_PER_SEC
 	//reference timestamp is not used in this assignment. just passing org it doesn't matter
 
-	struct ntpTime xmtTime = getCurrentTime(startTimeInSeconds, startTime);
+	struct ntpTime xmtTime = getCurrentTime(startTime);
 	xmtTimes[sendPos] = xmtTime;
 	// printf("Transmit time is %u.%f\n", xmtTime.intPart, pow(2, -32) * (double) xmtTime.fractionPart);
 	// li_vn_mode = li (2 bits), vn (3 bits), mode (3 bits)
@@ -257,6 +180,7 @@ void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, s
 		// https://pubs.opengroup.org/onlinepubs/009604499/functions/sendto.html
 		if (sendto(sockfd, buffer, packetSize, 0, (struct sockaddr*)client, (socklen_t)*clientAddressSize) < 0) {
 			perror("Error sending packet using sendto\n");
+			exit(1);
 		}
 	}
 	else {
@@ -265,7 +189,7 @@ void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, s
 	}
 }
 
-struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, time_t startTimeInSeconds, clock_t startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize) {
+struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, struct timespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize) {
 	char buffer[packetSize];
 	struct ntpPacket ret;
 	// clear memory in case it holds garbage values
@@ -284,7 +208,7 @@ struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos
 	}
 
 	// set the client's receive time
-	recvTimes[responsePos] = getCurrentTime(startTimeInSeconds, startTime);
+	recvTimes[responsePos] = getCurrentTime(startTime);
 	*lastRecvTime = recvTimes[responsePos];
 
 

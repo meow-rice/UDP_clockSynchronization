@@ -48,28 +48,29 @@ int main(int argc, char** argv) {
 	org.intPart = 0;
 	org.fractionPart = 0;
 
-	// zero out the responses and recvTimes
+	// zero out the xmtTimes and recvTimes
     memset((char*)&xmtTimes, 0, NumMessages*sizeof(struct ntpTime));
 	memset((char*)&recvTimes, 0, NumMessages*sizeof(struct ntpTime));
 	memset((char*)&lastRecvTime, 0, sizeof(struct ntpTime));
 
     // start the clock
-    clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
-    time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
-	startTimeInSeconds = time(NULL); // system time, epoch 1970
-	startTime = clock(); // processor time measured in CLOCKS_PER_SEC
+    struct timespec startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
+    time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime); this is a system time with epoch 1970.
+	// set the start times
+    synchronizeStartClock(&startTimeInSeconds, &startTime);
+	
 
     // respond to requests from the client until we end the server with CTRL + C
     while(true) {
         // get a request (use 0 for responsePos, the array element we'll modify)
         // this function automatically sets org and lastRecvTime for us.
-        recvMsg(serverfd, recvTimes, 0, &org, &lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
+        recvMsg(serverfd, recvTimes, 0, &org, &lastRecvTime, startTime, isServer, &client, &clientAddressSize);
         printf("Received packet from client %s, port %d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
         // printf("Org is %u.%f\n", org.intPart, pow(2, -32) * (double) org.fractionPart);
         // printf("Last receive time is %u.%f\n", lastRecvTime.intPart, pow(2, -32) * (double) lastRecvTime.fractionPart);
 
         // this function will automatically calculate the transmit time and use the previously found org and receive times.
-        sendMsg(serverfd, xmtTimes, 0, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, isServer, &client, &clientAddressSize);
+        sendMsg(serverfd, xmtTimes, 0, globalStratum, org, lastRecvTime, startTime, isServer, &client, &clientAddressSize);
     }
     printf("Stopping program.\n");
     if(serverfd > 0)
