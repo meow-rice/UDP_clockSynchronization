@@ -19,8 +19,8 @@
 // required to use #define instead of const for sizes of arrays at global level for some reason
 #define NumMessages 8
 const int packetSize = 48;
-time_t pollInterval = 4 * 60; // 4 minutes between bursts; use this variable in the ntp packet poll variable
-const signed char pollGlobal = 16; // poll every 16 seconds
+const signed char pollGlobal = 8; // power of 2 defining the maximum time between messages; a value of 8 means 256 seconds, or around 4 minutes
+time_t pollInterval = (time_t) pow(2, pollGlobal); // approximately 4 minutes between bursts; use this variable in the ntp packet poll variable
 // const signed char clockPrecision = floor(-log10(CLOCKS_PER_SEC) / log10(2.0)) + 1; // upper bound of log2(clock precision), to pass into NTP and to synchronize start time to the beginning of a second on the system clock
 const signed char clockPrecision = floor(-9 / log10(2.0)) + 1; // upper limit of nanosecond precision in base 2
 const double nanosecondCoefficient = pow(10, -9); // for use with representing timespecs in decimal form
@@ -57,14 +57,15 @@ struct ntpTime getCurrentTime(time_t baselineTime, clock_t precisionUnitsSinceBa
 // Calculate the difference in seconds between two NTP times.
 int ntpTimeEquals(struct ntpTime t1, struct ntpTime t2); // return true if the times are equivalent
 double timeDifference(struct ntpTime fisrtTime, struct ntpTime secondTime);
+double timeDifferenceTimespec(struct timespec firstTime, struct timespec secondTime);
 double calculateOffset(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);
-double minOffset(double offsets[8]);
+double minOffset(double offsets[NumMessages]);
 double calculateRoundtripDelay(struct ntpTime T1, struct ntpTime T2, struct ntpTime T3, struct ntpTime T4);
-double minDelay(double delays[8]);
+double minDelay(double delays[NumMessages]);
 void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, struct ntpTime org, struct ntpTime lastRecvTime, struct tmiespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
 // the parts of recvMsg past "int isServer" are what allow the server to respond to the client
 struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos, struct ntpTime* org, struct ntpTime* lastRecvTime, struct timespec startTime, bool isServer, struct sockaddr_in* client, int* clientAddressSize);
-void sortResponses(struct ntpPacket responses[8]);
+int sortResponses(struct ntpPacket responses[NumMessages], struct ntpTime xmtTimes[NumMessages], struct ntpTime recvTimes[NumMessages]);
 
 
 // The better way to align the start of the program clock with the start of a second in system time
@@ -109,6 +110,13 @@ struct ntpTime getCurrentTime(struct timespec baselineTime) {
 	ret.intPart = (unsigned int) currentTimeSince1900; // must fit in 32 bits
 	ret.fractionPart = (unsigned int) (diffInFractionalSeconds * pow(2,32)); // fractional part represented as a sequence of 32 bits, assuming little endian
 	return ret;
+}
+
+// second minus first
+double timeDifferenceTimespec(struct timespec firstTime, struct timespec secondTime) {
+	long diffInNanoseconds = secondTime.tv_nsec - firstTime.tv_nsec;
+	double diffInFractionalSeconds = nanosecondCoefficient * diffInNanoseconds;
+	return secondTime.tv_sec - firstTime.tv_sec + diffInFractionalSeconds;
 }
 
 // Send the ntp packet.

@@ -116,25 +116,46 @@ double minDelay(double delays[NumMessages]) {
 }
 
 // In case responses arrive out of order or dropped packets, we need to sort by sequential time.
-void sortResponses(struct ntpPacket responses[NumMessages]) {
+// Return the index of the first element that does not have a match
+int sortResponses(struct ntpPacket responses[NumMessages], struct ntpTime xmtTimes[NumMessages], struct ntpTime recvTimes[NumMessages]) {
+	int unsolved = 0; // index of the start of the unsorted portion
 	// Match our transmit time with the server's origin time
 	for(int i = 0; i < NumMessages; ++i) {
 		struct ntpTime xmtTime = xmtTimes[i];
+		// do not consider empty transmit times as a match and do not try to move them to the solved array
+		if(xmtTime.intPart == 0) {
+			continue;
+		}
 		int found = -1; // index of the response with origin time matching client transmit time
-		for(int j = 0; j < NumMessages; ++j) {
+		for(int j = unsolved; j < NumMessages; ++j) {
 			if(ntpTimeEquals(responses[j].originTimestamp, xmtTime)) {
 				found = j;
+				break;
 			}
 		}
+		// every time we find a match, move it to the "solved" part of the array and shrink the unsolved portion
 		if (found >= 0) {
-			// swap locations i and j
-			struct ntpPacket tmp = responses[i];
-			responses[i] = responses[found];
-			responses[found] = tmp;
+			if(found != i) {
+				// swap locations i and j
+				struct ntpPacket tmpResponse = responses[unsolved];
+				responses[unsolved] = responses[found];
+				responses[found] = tmpResponse;
+				// swap the corresponding receive times as well, so we know when we received the response
+				struct ntpTime tmpTime = recvTimes[unsolved];
+				recvTimes[unsolved] = recvTimes[found];
+				recvTimes[found] = tmpTime;
+				// bring the transmit time where it belongs at the end of the solved array
+				tmpTime = xmtTimes[unsolved];
+				xmtTimes[unsolved] = xmtTimes[i];
+				xmtTimes[i] = tmpTime;
+			}
+			++unsolved;
 		}
 	}
+	return unsolved; // index of the stuff we should override
 }
 
+// a helper function we're no longer using
 void testTimeEquals() {
 	struct ntpTime t1, t2, t3, t4;
 	t1.intPart = t2.intPart = t3.intPart = 200;
@@ -163,6 +184,7 @@ int main(int argc, char** argv) {
 	measurementFile.open(rawMeasurementData);
 	time_t programLength = 3600; // number of seconds to run the program (should be 1 hour for the real thing)
 	time_t timeBetweenBursts = pollInterval; // value may come from client.h
+	time_t timeBetweenPackets = 8; // According to Slack, NIST server may deny service if the packets are sent less than 4 seconds apart. Use this for retransmission as well.
 	struct timespec startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
 	time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 
@@ -190,13 +212,14 @@ int main(int argc, char** argv) {
 			// JUST FOR TESTING, reduce program length to one minute and time between bursts to 10 seconds
 			programLength = 60;
 			timeBetweenBursts = 10;
+			timeBetweenPackets = 1; // no delay, just burst as fast as possible until all packets are recovered
 			// END OF CHANGES FOR TESTING
 		}
 	}
 
 	// TODO: Possibly provide server port by command line args and modify the global serverPort
 
-	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts, programLength / 60);
+	printf("Server set to burst every %ld seconds with %ld seconds between consecutive packets for %ld minutes\n", timeBetweenBursts, timeBetweenPackets, programLength / 60);
 	printf("Press CTRL + C to stop the server\n");
 
 	// PREPARE DATA
@@ -227,16 +250,20 @@ int main(int argc, char** argv) {
 	size_t burstNumber = 0;
 	size_t numMessages;
 	time_t startOfBurst;
-	time_t curTime; // time passed since the start time
-	curTime = time(NULL) - startTimeInSeconds;
+	time_t timeOfPrevPacket; // when did you send the last packet?
+	time_t curTime; // current system time
+	time(&curTime);
+	int sendPos;
 
 	// loop until program should end
-	while (curTime < programLength) {
+	while (curTime - startTimeInSeconds < programLength) {
 		burstNumber++;
 		numMessages = 0;
 		responsePos = 0; // start reading things into the start of the length <NumMessages> arrays
-		curTime = time(NULL) - startTimeInSeconds; // time since the start of the program
+		time(&curTime);
 		startOfBurst = curTime;
+		timeOfPrevPacket = 0;
+		sendPos = 0; // governs data related to sent packets, such as transmit times
 		printf("Starting burst %ld\n", burstNumber);
 
 		// zero out the delays, offsets, and response arrays
@@ -244,26 +271,48 @@ int main(int argc, char** argv) {
 		memset((char*)&offsets, 0, NumMessages * sizeof(double));
 		memset((char*)&responses, 0, NumMessages*packetSize);
 
-		// Do a burst (send all msgs without waiting for a response)
-		for(int sendPos = 0; sendPos < NumMessages; ++sendPos) {
-			sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTime, false, NULL, NULL);
-		}
-		// Listen for responses
-		while (curTime - startOfBurst < timeBetweenBursts && responsePos < NumMessages) {
-			int bytesToRead = packetSize;
+		// Listen for responses. Exit the loop once the timer runs out or both the sendPos and responsePos max out
+		while (curTime - startOfBurst < timeBetweenBursts && (sendPos < NumMessages || responsePos < NumMessages)) {
+
+			// send a packet if the timeBetweenPackets has passed.
+			if(curTime - timeOfPrevPacket >= timeBetweenPackets) {
+				sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTime, false, NULL, NULL);
+				printf("Sent msg with sendPos %d, transmit time %f\n", sendPos, xmtTimes[sendPos].intPart + pow(2, -32) * xmtTimes[sendPos].fractionPart);
+				++sendPos;
+				time(&timeOfPrevPacket);
+			}
+
+			// If we have sent 8 packets, then compact all the results and set the sendPos and responsePos to the index after all the correct message pairs
+			if(sendPos >= NumMessages) {
+				sendPos = responsePos = sortResponses(responses, xmtTimes, recvTimes);
+			}
+			
 			// read a response if one exists
+			int bytesToRead = packetSize;
 			if (!ioctl(sockfd, FIONREAD, &bytesToRead) && bytesToRead == packetSize && responsePos < NumMessages) {
 				responses[responsePos] = recvMsg(sockfd, recvTimes, responsePos, &org, &lastRecvTime, startTime, false, NULL, NULL);
 				globalStratum = responses[responsePos].stratum;
+				printf("Received msg with responsePos %d, origin time %f\n", responsePos, responses[responsePos].originTimestamp.intPart + pow(2, -32)*responses[responsePos].originTimestamp.fractionPart);
 				++responsePos;
 			}
-			curTime = time(NULL) - startTimeInSeconds;
+
+			// If we have received 8 packets, then compact all the results and set the sendPos and responsePos to the index after all the correct message pairs
+			if(responsePos >= NumMessages) {
+				sendPos = responsePos = sortResponses(responses, xmtTimes, recvTimes);
+			}
+
+			time(&curTime);
 		}
 		// Burst is finished.
-		responsePos = NumMessages; // make sure we cycle through all responses, even ones that were lost.
-		sortResponses(responses);
+		int junkIndex = sortResponses(responses, xmtTimes, recvTimes);
+		// 0 out the data for lost responses
+		memset((char*)&responses[junkIndex], 0, (NumMessages - junkIndex) * sizeof(double));
+		memset((char*)&xmtTimes[junkIndex], 0, (NumMessages - junkIndex) * sizeof(double));
+		memset((char*)&recvTimes[junkIndex], 0, (NumMessages - junkIndex) * sizeof(double));
+		
 		// calculate offsets and delays
 		measurementFile<<burstNumber<<',';
+		responsePos = NumMessages; // make sure we cycle through all responses, even ones that were lost. We could probably just go up to junkIndex if I wrote my sort function correctly.
 		for (int i = 0; i < responsePos; i++) {
 			struct ntpPacket packet = responses[i];
 			struct ntpTime T1 = packet.originTimestamp;
@@ -320,7 +369,7 @@ int main(int argc, char** argv) {
 
 		// wait the rest of the 4-minute delay
 		while (curTime - startOfBurst < timeBetweenBursts) {
-			curTime = time(NULL) - startTimeInSeconds;
+			time(&curTime);
 		}
 	}
 
