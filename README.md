@@ -36,6 +36,8 @@ Then, go to VPC Network > Firewall and add a firewall rule to allow port 8100.
 * * UDP 8100
 * Continue
 * Associate with default network
+* Create
+
 On the sever VM, do ./server
 On the client VM for LAN, get the server VM's internal IP from Google Cloud Compute Engine and do `./client 2 --server ip_address`
 For connection from your own computer outside the Cloud, use the public/external IP.
