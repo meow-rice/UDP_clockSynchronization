@@ -19,7 +19,8 @@
 // required to use #define instead of const for sizes of arrays at global level for some reason
 #define NumMessages 8
 const int packetSize = 48;
-const signed char pollGlobal = 4 * 60; // 4 minutes between bursts; use this variable in the ntp packet poll variable
+time_t pollInterval = 4 * 60; // 4 minutes between bursts; use this variable in the ntp packet poll variable
+const signed char pollGlobal = 16; // poll every 16 seconds
 // const signed char clockPrecision = floor(-log10(CLOCKS_PER_SEC) / log10(2.0)) + 1; // upper bound of log2(clock precision), to pass into NTP and to synchronize start time to the beginning of a second on the system clock
 const signed char clockPrecision = floor(-9 / log10(2.0)) + 1; // upper limit of nanosecond precision in base 2
 const double nanosecondCoefficient = pow(10, -9); // for use with representing timespecs in decimal form

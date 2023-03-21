@@ -162,14 +162,9 @@ int main(int argc, char** argv) {
 	graphFile.open(graphData);
 	measurementFile.open(rawMeasurementData);
 	time_t programLength = 3600; // number of seconds to run the program (should be 1 hour for the real thing)
-	time_t timeBetweenBursts = pollGlobal;
+	time_t timeBetweenBursts = pollInterval; // value may come from client.h
 	struct timespec startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
 	time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
-
-	// JUST FOR TESTING, reduce program length to one minute and time between bursts to 10 seconds
-	programLength = 60;
-	timeBetweenBursts = 10;
-	// END OF CHANGES FOR TESTING
 
 
 	// QUALITY OF LIFE MESSAGES AND CONFIGURATION
@@ -177,9 +172,6 @@ int main(int argc, char** argv) {
 	//state format
 	graphFile<<"Format: Number of successful Messages (say n<=8), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
 	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
-
-	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts / CLOCKS_PER_SEC, programLength / 60 / CLOCKS_PER_SEC);
-	printf("Press CTRL + C to stop the server\n");
 
 	// Command line option 2 is local server
 	printf("Checking for special command line options\n");
@@ -192,8 +184,20 @@ int main(int argc, char** argv) {
 	serverName = (char*) malloc(hostnameLen);
 	strncpy(serverName, tmp, hostnameLen); // set the server name
 
+	// If a command line option is "test", then use short program length and intervals
+	for(int i = 1; i < argc; ++i) {
+		if(strcmp(argv[i], "test") == 0) {
+			// JUST FOR TESTING, reduce program length to one minute and time between bursts to 10 seconds
+			programLength = 60;
+			timeBetweenBursts = 10;
+			// END OF CHANGES FOR TESTING
+		}
+	}
+
 	// TODO: Possibly provide server port by command line args and modify the global serverPort
 
+	printf("Server set to burst every %ld seconds for %ld minutes\n", timeBetweenBursts, programLength / 60);
+	printf("Press CTRL + C to stop the server\n");
 
 	// PREPARE DATA
 	// initialize org
