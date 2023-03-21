@@ -14,6 +14,32 @@ Clock synchronization project for CSCI 5673
 `./client --server ip_or_hostname` to specify the server to connect to.  
 Full syntax: `./client [2] [--server ip_or_hostname] [test]`
 
+#### Running in the Cloud
+In Google Cloud, go to Compute Engine > VM and create instance with all default settings.
+When it comes up, click the SSH button.
+```
+sudo apt-get update
+sudo apt-get install make
+sudo apt-get install g++
+make
+```
+Do the above for two virtual machines.  
+Then, go to VPC Network > Firewall and add a firewall rule to allow port 8100.
+* Create Firewall Policy (near the top)
+* name: allow8100
+* Continue
+* Add Rule
+* * Priority 0
+* * Direction Ingress, allow on Match
+* * Source IP range 0.0.0.0/0
+* * Protocols and ports -> specified protocols and ports
+* * UDP 8100
+* Continue
+* Associate with default network
+On the sever VM, do ./server
+On the client VM for LAN, get the server VM's internal IP from Google Cloud Compute Engine and do `./client 2 --server ip_address`
+For connection from your own computer outside the Cloud, use the public/external IP.
+
 ### Limitations
 Note: The client uses retransmission to re-send packets, with an interval of 8 seconds between packets (8 is also the retransmission timeout). This decision was made due to the message in Slack: 
 ```
