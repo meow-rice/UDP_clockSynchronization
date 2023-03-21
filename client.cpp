@@ -201,6 +201,22 @@ int main(int argc, char** argv) {
 		tmp = localhost;
 		serverPort = 8100;
 	}
+
+	// check if the user passed in a server name
+	int serverNameIndex = 0;
+	char serverNamePrompt[] = "--server";
+	const int serverArgBufSize = 512;
+	char serverArg[serverArgBufSize];
+	for(int i = 0; i < argc; ++i) {
+		if(strcmp(argv[i], serverNamePrompt) == 0 && argc > i + 1) {
+			// read the next argument
+			serverNameIndex = i+1;
+			// copy server IP or hostname from command line into serverArg buffer while avoiding the possibility of buffer overlow
+			strncpy(serverArg, argv[serverNameIndex], serverArgBufSize);
+			tmp = serverArg;
+		}
+	}
+
 	// Prepare server name
 	int hostnameLen = strlen(tmp) + 1; // add 1 to make room for null terminator
 	serverName = (char*) malloc(hostnameLen);
@@ -209,6 +225,10 @@ int main(int argc, char** argv) {
 	// If a command line option is "test", then use short program length and intervals
 	for(int i = 1; i < argc; ++i) {
 		if(strcmp(argv[i], "test") == 0) {
+			if(i == serverNameIndex) {
+				perror("Bad command line arguments; 'test' collides with expected position of server name");
+				exit(1);
+			}
 			// JUST FOR TESTING, reduce program length to one minute and time between bursts to 10 seconds
 			programLength = 60;
 			timeBetweenBursts = 10;
