@@ -178,10 +178,8 @@ int main(int argc, char** argv) {
 	ofstream graphFile;
 	ofstream measurementFile;
 	//TODO: the inputs to the main need to get parsed to take a strings as input.
-	string graphData = "graphData.csv";
-	string rawMeasurementData = "rawMeasurementData.csv";
-	graphFile.open(graphData);
-	measurementFile.open(rawMeasurementData);
+	string graphData = "graphData";
+	string rawMeasurementData = "rawMeasurementData";
 	time_t programLength = 3600; // number of seconds to run the program (should be 1 hour for the real thing)
 	time_t timeBetweenBursts = pollInterval; // value may come from client.h
 	time_t timeBetweenPackets = 8; // According to Slack, NIST server may deny service if the packets are sent less than 4 seconds apart. Use this for retransmission as well.
@@ -190,10 +188,6 @@ int main(int argc, char** argv) {
 
 
 	// QUALITY OF LIFE MESSAGES AND CONFIGURATION
-
-	//state format
-	graphFile<<"Format: Number of successful Messages (say n<=8), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
-	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
 
 	// Command line option 2 is local server
 	printf("Checking for special command line options\n");
@@ -223,6 +217,7 @@ int main(int argc, char** argv) {
 	strncpy(serverName, tmp, hostnameLen); // set the server name
 
 	// If a command line option is "test", then use short program length and intervals
+	bool test = false;
 	for(int i = 1; i < argc; ++i) {
 		if(strcmp(argv[i], "test") == 0) {
 			if(i == serverNameIndex) {
@@ -233,11 +228,36 @@ int main(int argc, char** argv) {
 			programLength = 60;
 			timeBetweenBursts = 10;
 			timeBetweenPackets = 1; // no delay, just burst as fast as possible until all packets are recovered
+			test = true;
 			// END OF CHANGES FOR TESTING
 		}
 	}
 
-	// TODO: Possibly provide server port by command line args and modify the global serverPort
+	// set the names of the files to save to by appending the IP address
+	// https://www.geeksforgeeks.org/how-to-convert-c-style-strings-to-stdstring-and-vice-versa/
+	string filenameAppendix(serverName);
+	filenameAppendix = "-" + filenameAppendix;
+	// switch out the dots in the IP address for dashes
+	for(int i = 0; i < filenameAppendix.length(); i++) {
+		if(filenameAppendix[i] == '.') {
+			filenameAppendix[i] = '-';
+		}
+	}
+	if(test) {
+		filenameAppendix += "-test";
+	}
+	filenameAppendix += ".csv";
+	graphData += filenameAppendix;
+	rawMeasurementData += filenameAppendix;
+	std::cout << "Saving to files " << graphData << " and " << rawMeasurementData << std::endl;
+
+	// Use the new filenames
+	graphFile.open(graphData);
+	measurementFile.open(rawMeasurementData);
+	
+	//state format
+	graphFile<<"Format: Number of successful Messages (say n<=8), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
+	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
 
 	printf("Server set to burst every %ld seconds with %ld seconds between consecutive packets for %ld minutes\n", timeBetweenBursts, timeBetweenPackets, programLength / 60);
 	printf("Press CTRL + C to stop the server\n");
