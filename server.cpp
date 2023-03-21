@@ -13,7 +13,7 @@
 #include "client.h" // has some constants and structs
 
 // GLOBALS
-const int isServer = 1;
+const bool isServer = true;
 struct ntpTime org;
 struct ntpTime xmtTimes[NumMessages]; // local time we sent each request
 struct ntpTime recvTimes[NumMessages]; // local time each response was received

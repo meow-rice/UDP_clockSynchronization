@@ -30,8 +30,6 @@ struct ntpTime recvTimes[NumMessages]; // local time each response was received
 struct ntpTime lastRecvTime;
 struct ntpPacket responses[NumMessages];
 int responsePos = 0; // index in responses we will read to
-clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
-time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
 
 void error(char* msg) {
 	perror(msg); // print to stderr
@@ -167,9 +165,13 @@ int main(int argc, char** argv) {
 	//state format
 	graphFile<<"Format: Number of successful Messages (say n<=8), Burst #, offset_1, delay_1, ... , offset_n, delay_n, offset for minimum delay, minimum delay\n";
 	measurementFile<<" Burst #, T_1^1, T_2^1, T_3^1, T_4^1, ... , T_1^n, T_2^n, T_3^n, T_4^n, (where n<=8 is the number of successful messages) \n";
+	
 	// Times are based on time.h https://www.tutorialspoint.com/c_standard_library/time_h.htm
 	clock_t programLength = 60 * CLOCKS_PER_SEC; // number of seconds to run the program (should be 1 hour for the real thing)
 	clock_t timeBetweenBursts = pollingInterval;
+	clock_t startTime; // time on the clock when you started the program (we initialize this in main after the socket connects)
+	time_t startTimeInSeconds; // system time when you started the program (measured at the same time as startTime)
+
 	// JUST FOR TESTING, reduce time between bursts to 10 seconds
 	timeBetweenBursts = 10 * CLOCKS_PER_SEC;
 	clock_t startOfBurst;
@@ -201,15 +203,17 @@ int main(int argc, char** argv) {
 	memset((char*)&lastRecvTime, 0, sizeof(struct ntpTime));
 	memset((char*)&responses, 0, NumMessages*packetSize);
 
-	// connect to the server
+	// connect to the server (connect doesn't really mean anythng since this is UDP, but it does set up sockets and server addresses)
 	printf("Connecting to server %s at port %d\n", serverName, serverPort);
 	connectToServer(serverName, serverPort);
 
 
-	// start the clock
-	startTimeInSeconds = time(NULL); // system time, epoch 1970
-	startTime = clock(); // processor time measured in CLOCKS_PER_SEC
-	curTime = clock() - startTime; // time since the start of the program
+	// start the clock, as close as possible to the start of a new second
+	unsigned int attempts = 5;
+	int realPrecision = synchronizeStartClockWithinTolerance(clockPrecision, attempts, &startTimeInSeconds, &startTime);
+	printf("Finished synchronizing the start clock with precision %d\n", realPrecision);
+	curTime = clock() - startTime; // may not be 0 if we found the start time before the final synchronization attempt
+
 
 	// loop until program should end
 	while (curTime < programLength) {
@@ -226,14 +230,14 @@ int main(int argc, char** argv) {
 
 		// Do a burst (send all msgs without waiting for a response)
 		for(int sendPos = 0; sendPos < 8; ++sendPos) {
-			sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, 0, NULL, NULL);
+			sendMsg(sockfd, xmtTimes, sendPos, globalStratum, org, lastRecvTime, startTimeInSeconds, startTime, false, NULL, NULL);
 		}
 		// Listen for responses
 		while (curTime - startOfBurst < timeBetweenBursts && responsePos < 8) {
 			int bytesToRead = packetSize;
 			// read a response if one exists
 			if (!ioctl(sockfd, FIONREAD, &bytesToRead) && bytesToRead == packetSize && responsePos < 8) {
-				responses[responsePos] = recvMsg(sockfd, recvTimes, responsePos, &org, &lastRecvTime, startTimeInSeconds, startTime, 0, NULL, NULL);
+				responses[responsePos] = recvMsg(sockfd, recvTimes, responsePos, &org, &lastRecvTime, startTimeInSeconds, startTime, false, NULL, NULL);
 				globalStratum = responses[responsePos].stratum;
 				++responsePos;
 			}
