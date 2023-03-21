@@ -99,28 +99,35 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 		time(&startClockSynchronizer);
 		printf("Start clock synchronizer = %ld\n", startClockSynchronizer);
 		// for the current attempt, wait increasingly short times until we run into the next second above startClockSynchronizer in system time
-		do {
-			// nanosleep code from https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
-			// sleep for the current timem interval (power of 2)
-			struct timespec rem = timesToWait[tolIndex]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
+		if(tolIndex < numTolerances) { // this if statement avoids an infinite loop due to weirdness of do/while
 			do {
-				res = nanosleep(&rem, &rem);
-			} while(res && errno == EINTR);
-			time(startTimesInSeconds + iter); // record the time again after the wait
-			startTimes[iter] = clock();
-			printf("Slept for %ld nanoseconds, time = %ld\n", timesToWait[tolIndex].tv_nsec, startTimesInSeconds[iter]);
-			++tolIndex;
+				// nanosleep code from https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
+				// sleep for the current timem interval (power of 2)
+				struct timespec rem = timesToWait[tolIndex]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
+				do {
+					res = nanosleep(&rem, &rem);
+				} while(res && errno == EINTR);
+				time(startTimesInSeconds + iter); // record the time again after the wait
+				startTimes[iter] = clock();
+				printf("Slept for %ld nanoseconds, time = %ld\n", timesToWait[tolIndex].tv_nsec, startTimesInSeconds[iter]);
+				++tolIndex;
 
-		} while (tolIndex < numTolerances && startTimesInSeconds[iter] == startClockSynchronizer);
+			} while (tolIndex < numTolerances && startTimesInSeconds[iter] == startClockSynchronizer);
+		}
 		
 		achievedPrecisions[iter] = powers[tolIndex - 1];
 		printf("Iter %d achieved precision %d at time %ld\n", iter, achievedPrecisions[iter], startTimesInSeconds[iter]);
-		// whenever you fail, wait for (1 second - last amount of time waited) and continue with the next timeToWait (the next power of 2)
+		++iter; // proceed to the next attempt
+		if(iter >= attempts || tolIndex >= numTolerances) {
+			break;
+		}
+		
+		// Whenever you fail to fully synchronize (and you haven't gone through all the attempts yet),
+		// wait for (1 second - last amount of time waited) and continue with the next timeToWait (the next power of 2)
 		struct timespec rem = timesToWaitAfterFailure[tolIndex - 1]; // track the time remaining. This is useful if the program is interrupted and we still want to wait.
 		do {
 			res = nanosleep(&rem, &rem);
 		} while(res && errno == EINTR);
-		++iter; // proceed to the next attempt
 	}
 
 	// set startTimeInSeconds and startTime
@@ -149,9 +156,10 @@ signed char synchronizeStartClockWithinTolerance(signed char log2tolerance, unsi
 // Precondition: baselineTime and baselineInApplicationClock are measured at the same time prior to calling this function.
 struct ntpTime getCurrentTime(time_t baselineTime, clock_t baselineInApplicationClock) {
 	clock_t currentTime = clock();
-	
+	// printf("getCurrentTime() clock value is %ld\n", currentTime);
 	clock_t diffInTimeUnits = currentTime - baselineInApplicationClock;
 	double diffInSeconds = (double) diffInTimeUnits / CLOCKS_PER_SEC;
+	// printf("getCurrentTime() diffInSeconds is %f\n", diffInSeconds);
 	// attempting to extract fraction part and int part without losing precision https://stackoverflow.com/questions/5589383/extract-fractional-part-of-double-efficiently-in-c
 	double diffInFractionalSeconds = diffInSeconds - floor(diffInSeconds);
 	int integerSecondsSinceBaseline = (int) floor(diffInSeconds);
@@ -178,6 +186,7 @@ void sendMsg(int sockfd, struct ntpTime xmtTimes[], int sendPos, char stratum, s
 
 	struct ntpTime xmtTime = getCurrentTime(startTimeInSeconds, startTime);
 	xmtTimes[sendPos] = xmtTime;
+	// printf("Transmit time is %u.%f\n", xmtTime.intPart, pow(2, -32) * (double) xmtTime.fractionPart);
 	// li_vn_mode = li (2 bits), vn (3 bits), mode (3 bits)
 	uint8_t li_vn_mode = mode | (vn << 3) | (li << 6); // becomes 35 instead of 27 because we use version 4
 	struct ntpPacket packet = {li_vn_mode, stratum, pollGlobal, clockPrecision,  0,0,0, org, org, lastRecvTime, xmtTime};
@@ -254,7 +263,7 @@ struct ntpPacket recvMsg(int sockfd, struct ntpTime recvTimes[], int responsePos
 		// hopefully this grabs the whole packet at once
 		// https://pubs.opengroup.org/onlinepubs/007904875/functions/recvfrom.html
 		if ( recvfrom(sockfd, buffer, packetSize, 0, (struct sockaddr*)client, (socklen_t*)clientAddressSize) < 0 ) {
-			perror("Error reading socket while receiving message");
+			perror("Error reading socket while receiving message\n");
 		}
 	}
 	else {
