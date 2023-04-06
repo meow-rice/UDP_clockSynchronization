@@ -1,0 +1,49 @@
+\documentclass[a4paper,fleqn]{report}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\pagestyle{empty}
+\usepackage{graphicx}
+\begin{document}
+\hfill Lab "write-up"
+
+I'm listing one example from the plots but we are to justify the statement "The shorter and more symmetric the round-trip time, the more accurate the estimate of the current time". I argue (M. Alexander of the group) the question is ill-posed in my understanding of distributed systems. \\
+
+The requested task is to verify the fact given by the (in)equalities from lecture 4, \\
+
+\hspace{1cm}\includegraphics[scale = 0.35]{/Users/mauricealexander/Desktop/Screen Shot 2023-04-06 at 1.52.14 AM.png}
+
+The estimate is given by, if $T$ is the local time of the client, $T\leftarrow (T-o_i)$ or $T\leftarrow (T-\theta_i)$ with $\theta_i$ the offset with the minimal delay (the latter being optimal is a result of the theorem/fact we are to corroborate with the experiment)\\
+
+of course, this is crude, one is best off using a filter (e.g. that of Kalman). \\
+
+
+We want to verify $both$ the following statements and their mathematical counterpart:\\
+
+\noindent (1)"Shorter round trip time implies more accurate estimate" $\rightsquigarrow$ $d_i$ is small implies $o_i$ is close to $o$ .\\
+
+\noindent  There is no way to have $o$ (i.e. $t-t'$) -- due to the linear algebraic fact pointed out by the expression in red above, therefore there is nothing to be done except to observe the fact given by the inequality in the blue box. \\
+
+\noindent (2) "the more symmetric the round trip time is, the more accurate the estimate of the current time " $\rightsquigarrow$ $o \rightarrow o_i$ as $\frac{t'-t}{2}\rightarrow 0$ \\
+\noindent Again, there is no way to have $o$ (else, we would have a global clock), there is no way to corroborate the data here unless pulling more assumptions. There is nothing to be done except observe that fact on the right-hand-side of $"\rightsquigarrow"$ above is given by the equalities from lecture 4. \\
+
+Here are some plots you can make from the output of our code.\\
+
+
+\includegraphics[scale = 0.5]{../../../Figure_1.png}
+\includegraphics[scale = 0.5]{../../../Figure_2.png}
+\includegraphics[scale = 0.5]{../../../Figure_3.png}
+\includegraphics[scale = 0.5]{../../../Figure_4.png}
+\includegraphics[scale = 0.5]{../../../Figure_5.png}
+\includegraphics[scale = 0.5]{../../../Figure_6.png}
+\includegraphics[scale = 0.5]{../../../Figure_7.png}
+\includegraphics[scale = 0.5]{../../../Figure_8.png}
+\includegraphics[scale = 0.5]{../../../Figure_9.png}
+\includegraphics[scale = 0.5]{../../../Figure_10.png}
+\includegraphics[scale = 0.5]{../../../Figure_11.png}
+\includegraphics[scale = 0.5]{../../../Figure_12.png}
+\includegraphics[scale = 0.5]{../../../Figure_13.png}
+\includegraphics[scale = 0.5]{../../../Figure_14.png}
+
+
+
+\end{document}
