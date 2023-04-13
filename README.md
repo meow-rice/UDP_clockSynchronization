@@ -1,6 +1,27 @@
 # UDP_clockSynchronization
 Clock synchronization project for CSCI 5673
 
+## Group Members
+John Salame
+Maurice Alexander
+
+### Timing Studies
+The graphData files contain delays, offests, min delay, and min offest for each burst.  
+The rawMeasurementData files contain values of T1, T2, T3, and T4 for each packet. The data is split into seconds and milliseconds.  
+The files have IP addresses embedded in their names.
+* 10.128.0.23 is for two machines in the same LAN.
+* 34.27.33.102 is for a laptop connecting to a server on the Cloud.
+* 132.163.96.1 is for the public server.
+
+#### Explanation of Timing Studies
+For two machines in the same LAN, the offset is consistently around -3 milliseconds. The delays are about 1/10th of that and positive (about 3 in a thousand).  
+For a laptop connecting to a Cloud server, the offset is around -8 milliseconds and the delays are around two hundredths of a second.  
+For the public server, the offset is a few milliseconds (negative) but less stable than the same-LAN machines. The delay is one or two hundredths of a second.
+
+The Cloud server has the worst accuracy, as expected because the cluster is not in Colorado. The LAN had good accuracy due to low latency within the Google Cloud cluster.
+The public server's accuracy was somewhere in between. We chose a NIST server in Boulder.
+
+
 ### Compiling
 `make` to compile both client and server
 
@@ -39,7 +60,7 @@ Then, go to VPC Network > Firewall and add a firewall rule to allow port 8100.
 * Create
 
 On the sever VM, do ./server
-On the client VM for LAN, get the server VM's internal IP from Google Cloud Compute Engine and do `./client 2 --server ip_address`
+On the client VM for LAN, get the server VM's internal IP from Google Cloud Compute Engine and do `./client 2 --server ip_address`  
 For connection from your own computer outside the Cloud, use the public/external IP.
 
 ### Limitations
